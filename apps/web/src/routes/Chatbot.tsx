@@ -3,11 +3,13 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
@@ -97,8 +99,26 @@ export default function Chatbot() {
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
+  const clearChat = async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const sessionRef = doc(db, "chatSessions", user.uid);
+      const messagesRef = collection(sessionRef, "messages");
+      const snapshot = await getDocs(messagesRef);
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      batch.delete(sessionRef);
+      await batch.commit();
+      setMessages([]);
+    } catch (err) {
+      setError("대화를 삭제하지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

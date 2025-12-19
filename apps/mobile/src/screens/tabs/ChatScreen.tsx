@@ -4,11 +4,13 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { buildChatResponse } from "../../chatTemplates";
@@ -92,9 +94,36 @@ export default function ChatScreen() {
     }
   };
 
+  const clearChat = async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const sessionRef = doc(db, "chatSessions", user.uid);
+      const messagesRef = collection(sessionRef, "messages");
+      const snapshot = await getDocs(messagesRef);
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      batch.delete(sessionRef);
+      await batch.commit();
+      setMessages([]);
+    } catch (err) {
+      setError("대화를 삭제하지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>공감 챗봇</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>공감 챗봇</Text>
+        <TouchableOpacity style={styles.clearButton} onPress={clearChat}>
+          <Text style={styles.clearText}>Clear</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.card}>
         {messages.length === 0 && (
           <Text style={styles.muted}>오늘 어떤 일이 있었나요?</Text>
@@ -134,9 +163,25 @@ const styles = StyleSheet.create({
   container: {
     gap: 16,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   title: {
     fontSize: 22,
     fontWeight: "600",
+  },
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#222",
+  },
+  clearText: {
+    fontSize: 12,
+    color: "#222",
   },
   card: {
     backgroundColor: "#fff",
