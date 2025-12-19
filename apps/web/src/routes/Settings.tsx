@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
@@ -16,35 +16,36 @@ export default function Settings() {
   });
   const [hasLoaded, setHasLoaded] = useState(false);
   const saveTimer = useRef<number | null>(null);
+  const skipAutoSave = useRef(false);
 
   useEffect(() => {
     if (!user) return;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const ref = doc(db, "users", user.uid);
-        const snapshot = await getDoc(ref);
-        if (snapshot.exists()) {
-          const data = snapshot.data() as { displayName?: string; jobType?: string };
-          setForm({
-            displayName: data.displayName ?? user.displayName ?? "",
-            jobType: data.jobType ?? "",
-          });
-        } else {
-          setForm({
-            displayName: user.displayName ?? "",
-            jobType: "",
-          });
-        }
-      } catch (err) {
+    setLoading(true);
+    setError(null);
+
+    const ref = doc(db, "users", user.uid);
+    const unsubscribe = onSnapshot(
+      ref,
+      (snapshot) => {
+        const nextForm = snapshot.exists()
+          ? (snapshot.data() as { displayName?: string; jobType?: string })
+          : { displayName: user.displayName ?? "", jobType: "" };
+        skipAutoSave.current = true;
+        setForm({
+          displayName: nextForm.displayName ?? user.displayName ?? "",
+          jobType: nextForm.jobType ?? "",
+        });
+        setLoading(false);
+        setHasLoaded(true);
+      },
+      () => {
         setError("설정 정보를 불러오지 못했습니다.");
-      } finally {
         setLoading(false);
         setHasLoaded(true);
       }
-    };
-    load();
+    );
+
+    return () => unsubscribe();
   }, [user]);
 
   const save = async (nextForm: typeof form) => {
@@ -71,6 +72,10 @@ export default function Settings() {
 
   useEffect(() => {
     if (!user || !hasLoaded) return;
+    if (skipAutoSave.current) {
+      skipAutoSave.current = false;
+      return;
+    }
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
     }
