@@ -64,6 +64,12 @@ export default function SettingsScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(null), 3000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>설정</Text>

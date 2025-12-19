@@ -189,6 +189,12 @@ export default function Dashboard() {
     return latest.date;
   }, [weekLogs]);
 
+  const latestLogDateLabel = useMemo(() => {
+    if (!latestLogDate) return "최근 로그 없음";
+    const [year, month, day] = latestLogDate.split("-");
+    return `${month}.${day}`;
+  }, [latestLogDate]);
+
   const insightSummary = useMemo(() => {
     if (weekLogs.length === 0) {
       return "최근 7일 기록이 없어 기본 루틴을 제안합니다.";
@@ -361,7 +367,7 @@ export default function Dashboard() {
             {insightSummary} {routineText}
           </p>
           <div className="muted" style={{ marginTop: 12 }}>
-            최근 로그: {latestLogDate ?? "-"} · 기록 수: {weekLogs.length}건
+            최근 로그: {latestLogDateLabel} · 기록 수: {weekLogs.length.toLocaleString()}건
           </div>
           <div className="muted" style={{ marginTop: 6 }}>
             프로필: {profile.displayName || "-"} · 직종: {profile.jobType || "-"} ·
