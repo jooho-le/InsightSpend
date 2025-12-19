@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
+import { addDoc, collection, getDocs, orderBy, query, serverTimestamp, where } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
@@ -23,6 +23,16 @@ export default function Dashboard() {
   const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    mood: "",
+    context: "",
+    memo: "",
+    score: "",
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -122,6 +132,75 @@ export default function Dashboard() {
       .replace("{{actions}}", actions);
   }, [topMoods, weeklyAvg]);
 
+  const addLog = async () => {
+    if (!user) return;
+    setAddError(null);
+    const scoreValue = Number(addForm.score);
+    if (!addForm.date || !addForm.mood || !addForm.context || Number.isNaN(scoreValue)) {
+      setAddError("필수 값을 입력하세요.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "stressLogs"), {
+        uid: user.uid,
+        date: addForm.date,
+        mood: addForm.mood,
+        context: addForm.context,
+        memo: addForm.memo,
+        score: scoreValue,
+        createdAt: serverTimestamp(),
+      });
+      setAddForm({
+        date: new Date().toISOString().slice(0, 10),
+        mood: "",
+        context: "",
+        memo: "",
+        score: "",
+      });
+      setShowAdd(false);
+      setLoading(true);
+      setError(null);
+      const today = new Date();
+      const start = new Date();
+      start.setDate(today.getDate() - 6);
+      const startDate = start.toISOString().slice(0, 10);
+      const logsQuery = query(
+        collection(db, "stressLogs"),
+        where("uid", "==", user.uid),
+        where("date", ">=", startDate),
+        orderBy("date", "asc")
+      );
+      const snapshot = await getDocs(logsQuery);
+      const logs = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<StressLog, "id">),
+      }));
+      setWeekLogs(logs);
+      const trendMap = new Map<string, number>();
+      logs.forEach((log) => {
+        trendMap.set(log.date, log.score);
+      });
+      const nextTrend = Array.from({ length: 7 }).map((_, index) => {
+        const date = new Date(start);
+        date.setDate(start.getDate() + index);
+        const key = date.toISOString().slice(0, 10);
+        return {
+          date: key,
+          score: trendMap.get(key) ?? 0,
+        };
+      });
+      setTrend(nextTrend);
+      setRecent(logs.slice(-3).reverse());
+    } catch (err) {
+      setAddError("로그 추가에 실패했습니다.");
+    } finally {
+      setSaving(false);
+      setLoading(false);
+    }
+  };
+
   return (
     <AppShell>
       <div className="topbar">
@@ -129,11 +208,82 @@ export default function Dashboard() {
           <h1>Dashboard</h1>
           <div className="muted">이번 주 스트레스 흐름과 회복 지표</div>
         </div>
-        <button className="ghost-button">+ Add log</button>
+        <button className="ghost-button" onClick={() => setShowAdd((prev) => !prev)}>
+          + Add log
+        </button>
       </div>
 
       {loading && <div className="card">데이터를 불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
+
+      {showAdd && (
+        <section className="card">
+          <h3>최근 기록 추가</h3>
+          <div className="form-grid">
+            <label>
+              Date
+              <input
+                className="input"
+                type="date"
+                value={addForm.date}
+                onChange={(event) =>
+                  setAddForm((prev) => ({ ...prev, date: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Mood
+              <input
+                className="input"
+                value={addForm.mood}
+                onChange={(event) =>
+                  setAddForm((prev) => ({ ...prev, mood: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Context
+              <input
+                className="input"
+                value={addForm.context}
+                onChange={(event) =>
+                  setAddForm((prev) => ({ ...prev, context: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Memo
+              <input
+                className="input"
+                value={addForm.memo}
+                onChange={(event) =>
+                  setAddForm((prev) => ({ ...prev, memo: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Score
+              <input
+                className="input"
+                type="number"
+                value={addForm.score}
+                onChange={(event) =>
+                  setAddForm((prev) => ({ ...prev, score: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          {addError && <div className="muted">{addError}</div>}
+          <div className="button-row">
+            <button className="primary-button" onClick={addLog} disabled={saving}>
+              {saving ? "저장 중..." : "저장"}
+            </button>
+            <button className="secondary-button" onClick={() => setShowAdd(false)}>
+              닫기
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="hero">
         <div>

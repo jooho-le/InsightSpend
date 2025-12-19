@@ -1,9 +1,68 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { useAuth } from "../../auth";
+import { db } from "../../firebase";
+import type { StressLog } from "../../models";
 
 export default function DashboardScreen() {
   const { user, signOutUser } = useAuth();
+  const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const today = new Date();
+        const start = new Date();
+        start.setDate(today.getDate() - 6);
+        const startDate = start.toISOString().slice(0, 10);
+
+        const logsQuery = query(
+          collection(db, "stressLogs"),
+          where("uid", "==", user.uid),
+          where("date", ">=", startDate),
+          orderBy("date", "asc")
+        );
+        const snapshot = await getDocs(logsQuery);
+        const logs = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<StressLog, "id">),
+        }));
+        setWeekLogs(logs);
+      } catch (err) {
+        setError("통계 데이터를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [user]);
+
+  const weeklyAvg = useMemo(() => {
+    const scores = weekLogs.map((log) => log.score).filter((score) => score > 0);
+    if (scores.length === 0) return 0;
+    const sum = scores.reduce((acc, cur) => acc + cur, 0);
+    return Math.round(sum / scores.length);
+  }, [weekLogs]);
+
+  const topMoods = useMemo(() => {
+    const freq = new Map<string, number>();
+    weekLogs.forEach((log) => {
+      const key = log.mood.trim();
+      if (!key) return;
+      freq.set(key, (freq.get(key) ?? 0) + 1);
+    });
+    return Array.from(freq.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [weekLogs]);
 
   return (
     <View style={styles.container}>
@@ -12,6 +71,26 @@ export default function DashboardScreen() {
         <Text style={styles.label}>Recovery index</Text>
         <Text style={styles.stat}>74</Text>
         <Text style={styles.muted}>지난주 대비 +6%</Text>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.label}>주간 평균</Text>
+        <Text style={styles.stat}>{weeklyAvg || "-"}</Text>
+        <Text style={styles.muted}>최근 7일 평균 점수</Text>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.label}>감정 Top3</Text>
+        {loading && <Text style={styles.muted}>불러오는 중...</Text>}
+        {error && <Text style={styles.error}>{error}</Text>}
+        {!loading && topMoods.length === 0 && (
+          <Text style={styles.muted}>기록된 감정이 없습니다.</Text>
+        )}
+        {!loading &&
+          topMoods.map(([mood, count]) => (
+            <View key={mood} style={styles.moodRow}>
+              <Text style={styles.body}>{mood}</Text>
+              <Text style={styles.moodCount}>{count}회</Text>
+            </View>
+          ))}
       </View>
       <View style={styles.card}>
         <Text style={styles.label}>사용자</Text>
@@ -57,6 +136,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#777",
     marginTop: 4,
+  },
+  error: {
+    fontSize: 12,
+    color: "#b3261e",
+    marginTop: 4,
+  },
+  moodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  moodCount: {
+    fontSize: 12,
+    color: "#444",
   },
   logoutButton: {
     marginTop: 12,
