@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
@@ -9,10 +9,13 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [form, setForm] = useState({
     displayName: "",
     jobType: "",
   });
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -38,12 +41,13 @@ export default function Settings() {
         setError("설정 정보를 불러오지 못했습니다.");
       } finally {
         setLoading(false);
+        setHasLoaded(true);
       }
     };
     load();
   }, [user]);
 
-  const save = async () => {
+  const save = async (nextForm: typeof form) => {
     if (!user) return;
     setSaving(true);
     setError(null);
@@ -51,18 +55,34 @@ export default function Settings() {
       await setDoc(
         doc(db, "users", user.uid),
         {
-          displayName: form.displayName,
-          jobType: form.jobType,
-          createdAt: serverTimestamp(),
+          displayName: nextForm.displayName,
+          jobType: nextForm.jobType,
+          updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
+      setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
     } catch (err) {
       setError("설정 저장에 실패했습니다.");
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!user || !hasLoaded) return;
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+    }
+    saveTimer.current = window.setTimeout(() => {
+      save(form);
+    }, 600);
+    return () => {
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current);
+      }
+    };
+  }, [form, user, hasLoaded]);
 
   return (
     <AppShell>
@@ -101,9 +121,12 @@ export default function Settings() {
           </label>
         </div>
         <div className="button-row">
-          <button className="primary-button" onClick={save} disabled={saving}>
-            {saving ? "저장 중..." : "저장"}
+          <button className="primary-button" onClick={() => save(form)} disabled={saving}>
+            {saving ? "저장 중..." : "저장됨"}
           </button>
+          <div className="muted">
+            {savedAt ? `마지막 저장 ${savedAt}` : "입력하면 자동 저장됩니다."}
+          </div>
         </div>
       </section>
     </AppShell>
