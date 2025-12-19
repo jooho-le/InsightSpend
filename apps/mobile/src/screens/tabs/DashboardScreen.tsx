@@ -69,8 +69,8 @@ export default function DashboardScreen() {
       <Text style={styles.title}>오늘의 요약</Text>
       <View style={styles.card}>
         <Text style={styles.label}>Recovery index</Text>
-        <Text style={styles.stat}>74</Text>
-        <Text style={styles.muted}>지난주 대비 +6%</Text>
+        <Text style={styles.stat}>{weeklyAvg ? Math.max(0, 100 - weeklyAvg) : "-"}</Text>
+        <Text style={styles.muted}>최근 7일 기준</Text>
       </View>
       <View style={styles.card}>
         <Text style={styles.label}>주간 평균</Text>

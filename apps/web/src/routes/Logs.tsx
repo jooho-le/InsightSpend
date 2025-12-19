@@ -23,6 +23,7 @@ export default function Logs() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StressLog | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     mood: "",
     context: "",
@@ -154,74 +155,78 @@ export default function Logs() {
           <h1>Stress Logs</h1>
           <div className="muted">최근 기록을 한 눈에 확인하세요.</div>
         </div>
-        <button className="ghost-button">+ New log</button>
+        <button className="ghost-button" onClick={() => setShowCreate((prev) => !prev)}>
+          {showCreate ? "닫기" : "+ New log"}
+        </button>
       </div>
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
 
-      <section className="card">
-        <h3>새 로그 추가</h3>
-        <div className="form-grid">
-          <label>
-            Date
-            <input
-              className="input"
-              type="date"
-              value={createForm.date}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, date: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Mood
-            <input
-              className="input"
-              value={createForm.mood}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, mood: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Context
-            <input
-              className="input"
-              value={createForm.context}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, context: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Memo
-            <input
-              className="input"
-              value={createForm.memo}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, memo: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Score
-            <input
-              className="input"
-              type="number"
-              value={createForm.score}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, score: event.target.value }))
-              }
-            />
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="primary-button" onClick={addLog} disabled={saving}>
-            {saving ? "저장 중..." : "저장"}
-          </button>
-        </div>
-      </section>
+      {showCreate && (
+        <section className="card">
+          <h3>새 로그 추가</h3>
+          <div className="form-grid">
+            <label>
+              Date
+              <input
+                className="input"
+                type="date"
+                value={createForm.date}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, date: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Mood
+              <input
+                className="input"
+                value={createForm.mood}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, mood: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Context
+              <input
+                className="input"
+                value={createForm.context}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, context: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Memo
+              <input
+                className="input"
+                value={createForm.memo}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, memo: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Score
+              <input
+                className="input"
+                type="number"
+                value={createForm.score}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, score: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <div className="button-row">
+            <button className="primary-button" onClick={addLog} disabled={saving}>
+              {saving ? "저장 중..." : "저장"}
+            </button>
+          </div>
+        </section>
+      )}
 
       {editing && (
         <section className="card">
