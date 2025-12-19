@@ -13,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { useAuth } from "../../auth";
-import { buildChatResponse } from "../../chatTemplates";
+import { type AiMessage, fetchChatCompletion } from "../../ai";
 import { db } from "../../firebase";
 
 type Message = {
@@ -28,6 +28,9 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const systemPrompt =
+    "너는 공감형 스트레스 코치야. 사용자의 감정을 먼저 공감하고, 2~3개의 실천 가능한 조언을 짧게 제안해.";
+  const maxHistory = 12;
 
   useEffect(() => {
     if (!user) return;
@@ -79,7 +82,15 @@ export default function ChatScreen() {
         createdAt: serverTimestamp(),
       });
 
-      const reply = buildChatResponse(content);
+      const history: AiMessage[] = messages
+        .slice(-maxHistory)
+        .map((message) => ({ role: message.role, content: message.text }));
+      const aiMessages: AiMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...history,
+        { role: "user", content },
+      ];
+      const reply = await fetchChatCompletion(aiMessages);
       await addDoc(messagesRef, {
         role: "assistant",
         text: reply,
