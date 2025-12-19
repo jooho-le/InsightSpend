@@ -295,8 +295,8 @@ export default function Dashboard() {
         </div>
         <div className="hero-metric">
           <div className="muted">Recovery index</div>
-          <div className="stat">74</div>
-          <div className="muted">+6% vs last week</div>
+          <div className="stat">{weeklyAvg ? Math.max(0, 100 - weeklyAvg) : "-"}</div>
+          <div className="muted">최근 7일 기준</div>
         </div>
       </section>
 
@@ -326,7 +326,7 @@ export default function Dashboard() {
           <div className="bars">
             {trend.map((point, index) => (
               <div
-                key={`${point.date}-${index}`}
+                key={`${point.date || "day"}-${index}`}
                 className="bar"
                 style={{ height: `${Math.max(point.score, 5)}%` }}
                 title={`${point.date}: ${point.score}`}
@@ -334,8 +334,8 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="trend-labels">
-            {trend.map((point) => (
-              <span key={point.date}>{point.date.slice(5)}</span>
+            {trend.map((point, index) => (
+              <span key={`${point.date || "day"}-${index}`}>{point.date.slice(5)}</span>
             ))}
           </div>
         </div>
