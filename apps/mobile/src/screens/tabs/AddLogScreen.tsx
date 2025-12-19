@@ -1,28 +1,85 @@
-import React from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useState } from "react";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "../../auth";
+import { db } from "../../firebase";
 
 export default function AddLogScreen() {
+  const { user } = useAuth();
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [mood, setMood] = useState("");
+  const [context, setContext] = useState("");
+  const [memo, setMemo] = useState("");
+  const [score, setScore] = useState("60");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!user) return;
+    setError(null);
+    setSuccess(null);
+
+    const scoreValue = Number(score);
+    if (!date || !mood || !context || Number.isNaN(scoreValue)) {
+      setError("필수 항목을 입력하세요.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await addDoc(collection(db, "stressLogs"), {
+        uid: user.uid,
+        date,
+        mood,
+        context,
+        memo,
+        score: scoreValue,
+        createdAt: serverTimestamp(),
+      });
+      setSuccess("기록이 저장되었습니다.");
+      setMood("");
+      setContext("");
+      setMemo("");
+    } catch (err) {
+      setError("저장에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>빠른 기록</Text>
       <View style={styles.card}>
+        <Text style={styles.label}>날짜</Text>
+        <TextInput value={date} onChangeText={setDate} style={styles.input} />
         <Text style={styles.label}>감정</Text>
-        <TextInput placeholder="예: Calm, Tense" style={styles.input} />
+        <TextInput value={mood} onChangeText={setMood} placeholder="예: Calm, Tense" style={styles.input} />
         <Text style={styles.label}>상황</Text>
-        <TextInput placeholder="어떤 일이 있었나요?" style={styles.input} />
+        <TextInput value={context} onChangeText={setContext} placeholder="어떤 일이 있었나요?" style={styles.input} />
         <Text style={styles.label}>메모</Text>
         <TextInput
           placeholder="짧게 메모"
           style={[styles.input, styles.multiline]}
           multiline
+          value={memo}
+          onChangeText={setMemo}
         />
         <View style={styles.scoreRow}>
           <Text style={styles.label}>점수</Text>
-          <View style={styles.scorePill}>
-            <Text style={styles.scoreText}>65</Text>
-          </View>
+          <TextInput
+            value={score}
+            onChangeText={setScore}
+            style={[styles.input, styles.scoreInput]}
+            keyboardType="numeric"
+          />
         </View>
-        <Text style={styles.muted}>저장은 다음 단계에서 연결됩니다.</Text>
+        {error && <Text style={styles.error}>{error}</Text>}
+        {success && <Text style={styles.success}>{success}</Text>}
+        <TouchableOpacity style={styles.saveButton} onPress={submit} disabled={loading}>
+          <Text style={styles.saveText}>{loading ? "저장 중..." : "저장"}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -65,18 +122,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  scorePill: {
-    backgroundColor: "#111",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
+  scoreInput: {
+    width: 80,
+    textAlign: "center",
   },
-  scoreText: {
-    color: "#fff",
-    fontSize: 14,
+  error: {
+    fontSize: 12,
+    color: "#b3261e",
+  },
+  success: {
+    fontSize: 12,
+    color: "#1a7f37",
   },
   muted: {
     fontSize: 12,
     color: "#777",
+  },
+  saveButton: {
+    backgroundColor: "#111",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  saveText: {
+    color: "#fff",
+    fontSize: 15,
   },
 });

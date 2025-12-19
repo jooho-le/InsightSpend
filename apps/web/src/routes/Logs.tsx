@@ -1,13 +1,107 @@
+import { useEffect, useState } from "react";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import AppShell from "../components/AppShell";
-
-const logs = [
-  { date: "2024-06-11", mood: "Focused", context: "Deep work", score: 70 },
-  { date: "2024-06-12", mood: "Tense", context: "Client review", score: 45 },
-  { date: "2024-06-13", mood: "Relieved", context: "Release done", score: 78 },
-  { date: "2024-06-14", mood: "Neutral", context: "Routine tasks", score: 60 },
-];
+import { useAuth } from "../auth";
+import { db } from "../firebase";
+import type { StressLog } from "../models";
 
 export default function Logs() {
+  const { user } = useAuth();
+  const [logs, setLogs] = useState<StressLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StressLog | null>(null);
+  const [form, setForm] = useState({
+    mood: "",
+    context: "",
+    memo: "",
+    score: "",
+  });
+
+  const loadLogs = async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const logsQuery = query(
+        collection(db, "stressLogs"),
+        where("uid", "==", user.uid),
+        orderBy("date", "desc")
+      );
+      const snapshot = await getDocs(logsQuery);
+      const nextLogs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<StressLog, "id">),
+      }));
+      setLogs(nextLogs);
+    } catch (err) {
+      setError("로그 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    loadLogs();
+  }, [user]);
+
+  const startEdit = (log: StressLog) => {
+    setEditing(log);
+    setForm({
+      mood: log.mood,
+      context: log.context,
+      memo: log.memo,
+      score: String(log.score),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setForm({ mood: "", context: "", memo: "", score: "" });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    try {
+      const scoreValue = Number(form.score);
+      if (!form.mood || !form.context || Number.isNaN(scoreValue)) {
+        setError("필수 값을 입력하세요.");
+        return;
+      }
+
+      await updateDoc(doc(db, "stressLogs", editing.id), {
+        mood: form.mood,
+        context: form.context,
+        memo: form.memo,
+        score: scoreValue,
+      });
+      await loadLogs();
+      cancelEdit();
+    } catch (err) {
+      setError("로그 수정에 실패했습니다.");
+    }
+  };
+
+  const removeLog = async (logId: string) => {
+    if (!confirm("이 로그를 삭제할까요?")) return;
+    try {
+      await deleteDoc(doc(db, "stressLogs", logId));
+      await loadLogs();
+    } catch (err) {
+      setError("로그 삭제에 실패했습니다.");
+    }
+  };
+
   return (
     <AppShell>
       <div className="topbar">
@@ -18,17 +112,87 @@ export default function Logs() {
         <button className="ghost-button">+ New log</button>
       </div>
 
+      {loading && <div className="card">불러오는 중...</div>}
+      {error && <div className="card">{error}</div>}
+
+      {editing && (
+        <section className="card">
+          <h3>로그 수정</h3>
+          <div className="form-grid">
+            <label>
+              Mood
+              <input
+                className="input"
+                value={form.mood}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, mood: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Context
+              <input
+                className="input"
+                value={form.context}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, context: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Memo
+              <input
+                className="input"
+                value={form.memo}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, memo: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Score
+              <input
+                className="input"
+                type="number"
+                value={form.score}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, score: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <div className="button-row">
+            <button className="primary-button" onClick={saveEdit}>
+              저장
+            </button>
+            <button className="secondary-button" onClick={cancelEdit}>
+              취소
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <h3>Latest entries</h3>
         <div className="log-list">
+          {logs.length === 0 && <div className="muted">아직 기록이 없습니다.</div>}
           {logs.map((log) => (
-            <div key={`${log.date}-${log.mood}`} className="log-item">
+            <div key={log.id} className="log-item">
               <div className="pill">{log.date}</div>
               <div>
                 <div style={{ fontWeight: 600 }}>{log.mood}</div>
                 <div className="muted">{log.context}</div>
+                <div className="muted">{log.memo}</div>
               </div>
               <div className="pill">{log.score}</div>
+              <div className="log-actions">
+                <button className="secondary-button" onClick={() => startEdit(log)}>
+                  Edit
+                </button>
+                <button className="danger-button" onClick={() => removeLog(log.id)}>
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

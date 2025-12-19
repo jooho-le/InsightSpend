@@ -1,13 +1,86 @@
+import { useEffect, useMemo, useState } from "react";
+import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import AppShell from "../components/AppShell";
+import { useAuth } from "../auth";
+import { db } from "../firebase";
+import type { StressLog } from "../models";
 
-const moodTrend = [30, 55, 70, 40, 85, 60, 50];
-const recentLogs = [
-  { date: "Mon", mood: "Calm", note: "팀 미팅 마무리", score: 72 },
-  { date: "Tue", mood: "Tense", note: "마감 임박", score: 48 },
-  { date: "Wed", mood: "Balanced", note: "운동 후 집중", score: 66 },
-];
+type TrendPoint = {
+  date: string;
+  score: number;
+};
+
+const emptyTrend: TrendPoint[] = Array.from({ length: 7 }).map((_, index) => ({
+  date: "",
+  score: 0,
+}));
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const [trend, setTrend] = useState<TrendPoint[]>(emptyTrend);
+  const [recent, setRecent] = useState<StressLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const today = new Date();
+        const start = new Date();
+        start.setDate(today.getDate() - 6);
+        const startDate = start.toISOString().slice(0, 10);
+
+        const logsQuery = query(
+          collection(db, "stressLogs"),
+          where("uid", "==", user.uid),
+          where("date", ">=", startDate),
+          orderBy("date", "asc")
+        );
+        const snapshot = await getDocs(logsQuery);
+        const logs = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<StressLog, "id">),
+        }));
+
+        const trendMap = new Map<string, number>();
+        logs.forEach((log) => {
+          trendMap.set(log.date, log.score);
+        });
+
+        const nextTrend = Array.from({ length: 7 }).map((_, index) => {
+          const date = new Date(start);
+          date.setDate(start.getDate() + index);
+          const key = date.toISOString().slice(0, 10);
+          return {
+            date: key,
+            score: trendMap.get(key) ?? 0,
+          };
+        });
+
+        setTrend(nextTrend);
+        setRecent(logs.slice(-3).reverse());
+      } catch (err) {
+        setError("최근 7일 데이터를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [user]);
+
+  const weeklyAvg = useMemo(() => {
+    const scores = trend.map((item) => item.score).filter((score) => score > 0);
+    if (scores.length === 0) return 0;
+    const sum = scores.reduce((acc, cur) => acc + cur, 0);
+    return Math.round(sum / scores.length);
+  }, [trend]);
+
   return (
     <AppShell>
       <div className="topbar">
@@ -17,6 +90,9 @@ export default function Dashboard() {
         </div>
         <button className="ghost-button">+ Add log</button>
       </div>
+
+      {loading && <div className="card">데이터를 불러오는 중...</div>}
+      {error && <div className="card">{error}</div>}
 
       <section className="hero">
         <div>
@@ -36,7 +112,7 @@ export default function Dashboard() {
       <section className="grid three">
         <div className="card">
           <h3>Weekly Avg</h3>
-          <div className="stat">61</div>
+          <div className="stat">{weeklyAvg || "-"}</div>
           <div className="muted">평균 스트레스 점수</div>
         </div>
         <div className="card">
@@ -55,24 +131,33 @@ export default function Dashboard() {
         <div className="card">
           <h3>7-day Mood Trend</h3>
           <div className="bars">
-            {moodTrend.map((value, index) => (
+            {trend.map((point, index) => (
               <div
-                key={`${value}-${index}`}
+                key={`${point.date}-${index}`}
                 className="bar"
-                style={{ height: `${value}%` }}
+                style={{ height: `${Math.max(point.score, 5)}%` }}
+                title={`${point.date}: ${point.score}`}
               />
+            ))}
+          </div>
+          <div className="trend-labels">
+            {trend.map((point) => (
+              <span key={point.date}>{point.date.slice(5)}</span>
             ))}
           </div>
         </div>
         <div className="card">
           <h3>Recent Logs</h3>
           <div className="log-list">
-            {recentLogs.map((log) => (
-              <div key={`${log.date}-${log.mood}`} className="log-item">
-                <div className="pill">{log.date}</div>
+            {recent.length === 0 && (
+              <div className="muted">최근 기록이 없습니다.</div>
+            )}
+            {recent.map((log) => (
+              <div key={log.id} className="log-item">
+                <div className="pill">{log.date.slice(5)}</div>
                 <div>
                   <div style={{ fontWeight: 600 }}>{log.mood}</div>
-                  <div className="muted">{log.note}</div>
+                  <div className="muted">{log.context}</div>
                 </div>
                 <div className="pill">{log.score}</div>
               </div>
