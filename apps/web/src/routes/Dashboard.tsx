@@ -4,6 +4,7 @@ import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { StressLog } from "../models";
+import { routineTemplate } from "../promptTemplates";
 
 type TrendPoint = {
   date: string;
@@ -19,6 +20,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [trend, setTrend] = useState<TrendPoint[]>(emptyTrend);
   const [recent, setRecent] = useState<StressLog[]>([]);
+  const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +65,7 @@ export default function Dashboard() {
         });
 
         setTrend(nextTrend);
+        setWeekLogs(logs);
         setRecent(logs.slice(-3).reverse());
       } catch (err) {
         setError("최근 7일 데이터를 불러오지 못했습니다.");
@@ -80,6 +83,44 @@ export default function Dashboard() {
     const sum = scores.reduce((acc, cur) => acc + cur, 0);
     return Math.round(sum / scores.length);
   }, [trend]);
+
+  const { maxScore, minScore } = useMemo(() => {
+    const scores = trend.map((item) => item.score).filter((score) => score > 0);
+    if (scores.length === 0) {
+      return { maxScore: 0, minScore: 0 };
+    }
+    return {
+      maxScore: Math.max(...scores),
+      minScore: Math.min(...scores),
+    };
+  }, [trend]);
+
+  const topMoods = useMemo(() => {
+    const freq = new Map<string, number>();
+    weekLogs.forEach((log) => {
+      const key = log.mood.trim();
+      if (!key) return;
+      freq.set(key, (freq.get(key) ?? 0) + 1);
+    });
+    return Array.from(freq.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [weekLogs]);
+
+  const routineText = useMemo(() => {
+    const topMood = topMoods[0]?.[0] ?? "Neutral";
+    const focus = weeklyAvg >= 70 ? "회복 시간을 확보하는 것" : "집중 리듬을 유지하는 것";
+    const actions =
+      weeklyAvg >= 70
+        ? "짧은 휴식, 수분 보충, 퇴근 전 10분 스트레칭"
+        : "작은 목표 설정, 20분 집중 세션, 저녁 산책";
+
+    return routineTemplate.prompt
+      .replace("{{topMood}}", topMood)
+      .replace("{{avg}}", weeklyAvg ? String(weeklyAvg) : "0")
+      .replace("{{focus}}", focus)
+      .replace("{{actions}}", actions);
+  }, [topMoods, weeklyAvg]);
 
   return (
     <AppShell>
@@ -116,14 +157,16 @@ export default function Dashboard() {
           <div className="muted">평균 스트레스 점수</div>
         </div>
         <div className="card">
-          <h3>Peak Moment</h3>
-          <div className="stat">Tue 4PM</div>
-          <div className="muted">가장 높은 긴장 구간</div>
+          <h3>Max / Min</h3>
+          <div className="stat">
+            {maxScore || "-"} / {minScore || "-"}
+          </div>
+          <div className="muted">이번 주 최고/최저 점수</div>
         </div>
         <div className="card">
-          <h3>Focus Streak</h3>
-          <div className="stat">3 days</div>
-          <div className="muted">연속 안정 세션</div>
+          <h3>Top Moods</h3>
+          <div className="stat">{topMoods[0]?.[0] || "-"}</div>
+          <div className="muted">가장 많이 기록된 감정</div>
         </div>
       </section>
 
@@ -145,6 +188,25 @@ export default function Dashboard() {
               <span key={point.date}>{point.date.slice(5)}</span>
             ))}
           </div>
+        </div>
+        <div className="card">
+          <h3>Mood Top3</h3>
+          <div className="insight-list">
+            {topMoods.length === 0 && <div className="muted">기록된 감정이 없습니다.</div>}
+            {topMoods.map(([mood, count]) => (
+              <div key={mood} className="insight-row">
+                <span>{mood}</span>
+                <span className="pill">{count}회</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid two">
+        <div className="card">
+          <h3>{routineTemplate.header}</h3>
+          <p className="muted">{routineText}</p>
         </div>
         <div className="card">
           <h3>Recent Logs</h3>

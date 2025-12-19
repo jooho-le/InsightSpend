@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import Chatbot from "./routes/Chatbot";
 import Dashboard from "./routes/Dashboard";
 import Insights from "./routes/Insights";
 import Login from "./routes/Login";
@@ -23,6 +24,10 @@ export default function App() {
       <Route
         path="/logs"
         element={user ? <Logs /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/chat"
+        element={user ? <Chatbot /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/insights"

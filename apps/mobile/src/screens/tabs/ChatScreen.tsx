@@ -1,0 +1,202 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+import { useAuth } from "../../auth";
+import { buildChatResponse } from "../../chatTemplates";
+import { db } from "../../firebase";
+
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+};
+
+export default function ChatScreen() {
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const sessionRef = doc(db, "chatSessions", user.uid);
+    const init = async () => {
+      await setDoc(
+        sessionRef,
+        { uid: user.uid, updatedAt: serverTimestamp(), createdAt: serverTimestamp() },
+        { merge: true }
+      );
+    };
+    init();
+
+    const messagesRef = collection(sessionRef, "messages");
+    const q = query(messagesRef, orderBy("createdAt", "asc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const nextMessages = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<Message, "id">),
+        }));
+        setMessages(nextMessages);
+      },
+      () => {
+        setError("대화를 불러오지 못했습니다.");
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+
+  const sendMessage = async () => {
+    if (!canSend || !user) return;
+    setLoading(true);
+    setError(null);
+    const content = input.trim();
+    setInput("");
+
+    try {
+      const sessionRef = doc(db, "chatSessions", user.uid);
+      const messagesRef = collection(sessionRef, "messages");
+
+      await addDoc(messagesRef, {
+        role: "user",
+        text: content,
+        createdAt: serverTimestamp(),
+      });
+
+      const reply = buildChatResponse(content);
+      await addDoc(messagesRef, {
+        role: "assistant",
+        text: reply,
+        createdAt: serverTimestamp(),
+      });
+
+      await setDoc(sessionRef, { updatedAt: serverTimestamp() }, { merge: true });
+    } catch (err) {
+      setError("메시지 전송에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>공감 챗봇</Text>
+      <View style={styles.card}>
+        {messages.length === 0 && (
+          <Text style={styles.muted}>오늘 어떤 일이 있었나요?</Text>
+        )}
+        {error && <Text style={styles.error}>{error}</Text>}
+        {messages.map((message) => (
+          <View
+            key={message.id}
+            style={[
+              styles.bubble,
+              message.role === "user" ? styles.bubbleMe : styles.bubbleBot,
+            ]}
+          >
+            <Text style={message.role === "user" ? styles.bubbleTextMe : styles.bubbleTextBot}>
+              {message.text}
+            </Text>
+          </View>
+        ))}
+        {loading && <Text style={styles.muted}>응답을 준비 중...</Text>}
+      </View>
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="상황을 입력하세요."
+        />
+        <TouchableOpacity style={styles.button} onPress={sendMessage} disabled={!canSend}>
+          <Text style={styles.buttonText}>Send</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    gap: 16,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "600",
+  },
+  card: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#ece6da",
+    gap: 10,
+    minHeight: 320,
+  },
+  bubble: {
+    padding: 10,
+    borderRadius: 12,
+    maxWidth: "80%",
+  },
+  bubbleMe: {
+    alignSelf: "flex-end",
+    backgroundColor: "#111",
+  },
+  bubbleBot: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f3efe6",
+  },
+  bubbleTextMe: {
+    color: "#fff",
+    fontSize: 13,
+  },
+  bubbleTextBot: {
+    color: "#222",
+    fontSize: 13,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ded7c8",
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 14,
+    backgroundColor: "#fff",
+  },
+  button: {
+    backgroundColor: "#111",
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 14,
+  },
+  muted: {
+    fontSize: 12,
+    color: "#777",
+  },
+  error: {
+    fontSize: 12,
+    color: "#b3261e",
+  },
+});

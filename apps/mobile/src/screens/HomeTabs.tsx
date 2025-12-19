@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import AddLogScreen from "./tabs/AddLogScreen";
+import ChatScreen from "./tabs/ChatScreen";
 import DashboardScreen from "./tabs/DashboardScreen";
 import LogsScreen from "./tabs/LogsScreen";
 
-type TabKey = "dashboard" | "add" | "logs";
+type TabKey = "dashboard" | "add" | "logs" | "chat";
 
 export default function HomeTabs() {
   const [tab, setTab] = useState<TabKey>("dashboard");
@@ -15,11 +16,13 @@ export default function HomeTabs() {
         {tab === "dashboard" && <DashboardScreen />}
         {tab === "add" && <AddLogScreen />}
         {tab === "logs" && <LogsScreen />}
+        {tab === "chat" && <ChatScreen />}
       </View>
       <View style={styles.tabBar}>
         <TabButton label="요약" active={tab === "dashboard"} onPress={() => setTab("dashboard")} />
         <TabButton label="기록" active={tab === "add"} onPress={() => setTab("add")} />
         <TabButton label="내 로그" active={tab === "logs"} onPress={() => setTab("logs")} />
+        <TabButton label="챗봇" active={tab === "chat"} onPress={() => setTab("chat")} />
       </View>
     </SafeAreaView>
   );
