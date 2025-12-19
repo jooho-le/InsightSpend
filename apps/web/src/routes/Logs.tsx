@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
   getDocs,
   orderBy,
   query,
+  serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -19,8 +21,16 @@ export default function Logs() {
   const [logs, setLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StressLog | null>(null);
   const [form, setForm] = useState({
+    mood: "",
+    context: "",
+    memo: "",
+    score: "",
+  });
+  const [createForm, setCreateForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
     mood: "",
     context: "",
     memo: "",
@@ -92,6 +102,41 @@ export default function Logs() {
     }
   };
 
+  const addLog = async () => {
+    if (!user) return;
+    setError(null);
+    const scoreValue = Number(createForm.score);
+    if (!createForm.date || !createForm.mood || !createForm.context || Number.isNaN(scoreValue)) {
+      setError("필수 값을 입력하세요.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "stressLogs"), {
+        uid: user.uid,
+        date: createForm.date,
+        mood: createForm.mood,
+        context: createForm.context,
+        memo: createForm.memo,
+        score: scoreValue,
+        createdAt: serverTimestamp(),
+      });
+      setCreateForm({
+        date: new Date().toISOString().slice(0, 10),
+        mood: "",
+        context: "",
+        memo: "",
+        score: "",
+      });
+      await loadLogs();
+    } catch (err) {
+      setError("로그 추가에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const removeLog = async (logId: string) => {
     if (!confirm("이 로그를 삭제할까요?")) return;
     try {
@@ -114,6 +159,69 @@ export default function Logs() {
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
+
+      <section className="card">
+        <h3>새 로그 추가</h3>
+        <div className="form-grid">
+          <label>
+            Date
+            <input
+              className="input"
+              type="date"
+              value={createForm.date}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, date: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Mood
+            <input
+              className="input"
+              value={createForm.mood}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, mood: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Context
+            <input
+              className="input"
+              value={createForm.context}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, context: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Memo
+            <input
+              className="input"
+              value={createForm.memo}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, memo: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Score
+            <input
+              className="input"
+              type="number"
+              value={createForm.score}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, score: event.target.value }))
+              }
+            />
+          </label>
+        </div>
+        <div className="button-row">
+          <button className="primary-button" onClick={addLog} disabled={saving}>
+            {saving ? "저장 중..." : "저장"}
+          </button>
+        </div>
+      </section>
 
       {editing && (
         <section className="card">

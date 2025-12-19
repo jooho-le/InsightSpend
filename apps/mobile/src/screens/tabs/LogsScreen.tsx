@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import type { StressLog } from "../../models";
@@ -10,6 +19,8 @@ export default function LogsScreen() {
   const [logs, setLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StressLog | null>(null);
+  const [form, setForm] = useState({ mood: "", context: "", memo: "", score: "" });
 
   useEffect(() => {
     if (!user) return;
@@ -39,9 +50,99 @@ export default function LogsScreen() {
     return () => unsubscribe();
   }, [user]);
 
+  const startEdit = (log: StressLog) => {
+    setEditing(log);
+    setForm({
+      mood: log.mood,
+      context: log.context,
+      memo: log.memo,
+      score: String(log.score),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setForm({ mood: "", context: "", memo: "", score: "" });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const scoreValue = Number(form.score);
+    if (!form.mood || !form.context || Number.isNaN(scoreValue)) {
+      setError("필수 값을 입력하세요.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "stressLogs", editing.id), {
+        mood: form.mood,
+        context: form.context,
+        memo: form.memo,
+        score: scoreValue,
+      });
+      cancelEdit();
+    } catch (err) {
+      setError("수정에 실패했습니다.");
+    }
+  };
+
+  const removeLog = (logId: string) => {
+    Alert.alert("로그 삭제", "이 로그를 삭제할까요?", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "stressLogs", logId));
+          } catch (err) {
+            setError("삭제에 실패했습니다.");
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>내 로그</Text>
+      {editing && (
+        <View style={styles.editCard}>
+          <Text style={styles.editTitle}>로그 수정</Text>
+          <TextInput
+            style={styles.input}
+            value={form.mood}
+            onChangeText={(text) => setForm((prev) => ({ ...prev, mood: text }))}
+            placeholder="감정"
+          />
+          <TextInput
+            style={styles.input}
+            value={form.context}
+            onChangeText={(text) => setForm((prev) => ({ ...prev, context: text }))}
+            placeholder="상황"
+          />
+          <TextInput
+            style={styles.input}
+            value={form.memo}
+            onChangeText={(text) => setForm((prev) => ({ ...prev, memo: text }))}
+            placeholder="메모"
+          />
+          <TextInput
+            style={styles.input}
+            value={form.score}
+            onChangeText={(text) => setForm((prev) => ({ ...prev, score: text }))}
+            placeholder="점수"
+            keyboardType="numeric"
+          />
+          <View style={styles.editActions}>
+            <TouchableOpacity style={styles.primaryButton} onPress={saveEdit}>
+              <Text style={styles.primaryButtonText}>저장</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={cancelEdit}>
+              <Text style={styles.secondaryButtonText}>취소</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       <View style={styles.card}>
         {loading && <Text style={styles.muted}>불러오는 중...</Text>}
         {error && <Text style={styles.error}>{error}</Text>}
@@ -61,6 +162,14 @@ export default function LogsScreen() {
             <View style={styles.score}>
               <Text style={styles.scoreText}>{log.score}</Text>
             </View>
+            <View style={styles.rowActions}>
+              <TouchableOpacity style={styles.smallButton} onPress={() => startEdit(log)}>
+                <Text style={styles.smallButtonText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteButton} onPress={() => removeLog(log.id)}>
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
       </View>
@@ -74,6 +183,18 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
+    fontWeight: "600",
+  },
+  editCard: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#ece6da",
+    gap: 10,
+  },
+  editTitle: {
+    fontSize: 16,
     fontWeight: "600",
   },
   card: {
@@ -118,6 +239,66 @@ const styles = StyleSheet.create({
   },
   scoreText: {
     color: "#fff",
+    fontSize: 12,
+  },
+  rowActions: {
+    gap: 6,
+  },
+  smallButton: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd5c7",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  smallButtonText: {
+    fontSize: 11,
+    color: "#333",
+  },
+  deleteButton: {
+    backgroundColor: "#fff0f0",
+    borderWidth: 1,
+    borderColor: "#f1b6b6",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  deleteButtonText: {
+    fontSize: 11,
+    color: "#b3261e",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ded7c8",
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 14,
+    backgroundColor: "#faf9f6",
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  primaryButton: {
+    backgroundColor: "#111",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  primaryButtonText: {
+    color: "#fff",
+    fontSize: 12,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: "#222",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  secondaryButtonText: {
+    color: "#222",
     fontSize: 12,
   },
   muted: {
