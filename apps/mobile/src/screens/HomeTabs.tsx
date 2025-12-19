@@ -1,0 +1,77 @@
+import React, { useState } from "react";
+import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import AddLogScreen from "./tabs/AddLogScreen";
+import DashboardScreen from "./tabs/DashboardScreen";
+import LogsScreen from "./tabs/LogsScreen";
+
+type TabKey = "dashboard" | "add" | "logs";
+
+export default function HomeTabs() {
+  const [tab, setTab] = useState<TabKey>("dashboard");
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        {tab === "dashboard" && <DashboardScreen />}
+        {tab === "add" && <AddLogScreen />}
+        {tab === "logs" && <LogsScreen />}
+      </View>
+      <View style={styles.tabBar}>
+        <TabButton label="요약" active={tab === "dashboard"} onPress={() => setTab("dashboard")} />
+        <TabButton label="기록" active={tab === "add"} onPress={() => setTab("add")} />
+        <TabButton label="내 로그" active={tab === "logs"} onPress={() => setTab("logs")} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function TabButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} style={[styles.tabButton, active && styles.tabButtonActive]}>
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f6f4ef",
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    padding: 10,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e7e2d8",
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  tabButtonActive: {
+    backgroundColor: "#111",
+  },
+  tabLabel: {
+    color: "#333",
+    fontSize: 14,
+  },
+  tabLabelActive: {
+    color: "#fff",
+  },
+});
