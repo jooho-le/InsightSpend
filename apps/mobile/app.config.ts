@@ -14,7 +14,10 @@ export default {
       firebaseAppId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-      googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+      googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+      openAiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
+      openAiModel: process.env.EXPO_PUBLIC_OPENAI_MODEL,
+      openAiBaseUrl: process.env.EXPO_PUBLIC_OPENAI_BASE_URL
     }
   }
 };

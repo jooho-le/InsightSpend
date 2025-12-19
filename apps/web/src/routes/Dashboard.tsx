@@ -132,6 +132,29 @@ export default function Dashboard() {
       .replace("{{actions}}", actions);
   }, [topMoods, weeklyAvg]);
 
+  const recoveryIndex = useMemo(() => {
+    if (!weeklyAvg) return null;
+    return Math.max(0, 100 - weeklyAvg);
+  }, [weeklyAvg]);
+
+  const latestLogDate = useMemo(() => {
+    if (weekLogs.length === 0) return null;
+    const latest = weekLogs[weekLogs.length - 1];
+    return latest.date;
+  }, [weekLogs]);
+
+  const insightSummary = useMemo(() => {
+    if (weekLogs.length === 0) {
+      return "최근 7일 기록이 없어 기본 루틴을 제안합니다.";
+    }
+    const avgText = `지난 7일 평균 스트레스 점수는 ${weeklyAvg}점입니다.`;
+    const focusText =
+      weeklyAvg >= 70
+        ? "이번 주는 회복 시간을 확보하는 것이 중요합니다."
+        : "이번 주는 집중 리듬을 유지하는 것이 중요합니다.";
+    return `${avgText} ${focusText}`;
+  }, [weekLogs.length, weeklyAvg]);
+
   const addLog = async () => {
     if (!user) return;
     setAddError(null);
@@ -287,15 +310,17 @@ export default function Dashboard() {
 
       <section className="hero">
         <div>
-          <h2>오늘의 리듬을 정리하고 회복 전략을 설계하세요.</h2>
+          <h2>이번 주 리듬을 빠르게 정리하세요.</h2>
           <p>
-            지난 7일 동안 평균 스트레스 점수는 61점입니다. 회복 지수를
-            유지하려면 2일에 한 번 짧은 휴식 루틴을 추천합니다.
+            {insightSummary} {routineText}
           </p>
+          <div className="muted" style={{ marginTop: 12 }}>
+            최근 로그: {latestLogDate ?? "-"} · 기록 수: {weekLogs.length}건
+          </div>
         </div>
         <div className="hero-metric">
           <div className="muted">Recovery index</div>
-          <div className="stat">{weeklyAvg ? Math.max(0, 100 - weeklyAvg) : "-"}</div>
+          <div className="stat">{recoveryIndex ?? "-"}</div>
           <div className="muted">최근 7일 기준</div>
         </div>
       </section>
@@ -303,41 +328,54 @@ export default function Dashboard() {
       <section className="grid three">
         <div className="card">
           <h3>Weekly Avg</h3>
-          <div className="stat">{weeklyAvg || "-"}</div>
-          <div className="muted">평균 스트레스 점수</div>
+          <div className="stat">{weekLogs.length === 0 ? "-" : weeklyAvg || "-"}</div>
+          <div className="muted">
+            {weekLogs.length === 0 ? "최근 기록이 없습니다." : "평균 스트레스 점수"}
+          </div>
         </div>
         <div className="card">
           <h3>Max / Min</h3>
           <div className="stat">
-            {maxScore || "-"} / {minScore || "-"}
+            {weekLogs.length === 0 ? "-" : maxScore || "-"} /{" "}
+            {weekLogs.length === 0 ? "-" : minScore || "-"}
           </div>
-          <div className="muted">이번 주 최고/최저 점수</div>
+          <div className="muted">
+            {weekLogs.length === 0 ? "최근 기록이 없습니다." : "이번 주 최고/최저 점수"}
+          </div>
         </div>
         <div className="card">
           <h3>Top Moods</h3>
           <div className="stat">{topMoods[0]?.[0] || "-"}</div>
-          <div className="muted">가장 많이 기록된 감정</div>
+          <div className="muted">
+            {topMoods.length === 0 ? "최근 기록이 없습니다." : "가장 많이 기록된 감정"}
+          </div>
         </div>
       </section>
 
       <section className="grid two">
         <div className="card">
           <h3>7-day Mood Trend</h3>
-          <div className="bars">
-            {trend.map((point, index) => (
-              <div
-                key={`${point.date || "day"}-${index}`}
-                className="bar"
-                style={{ height: `${Math.max(point.score, 5)}%` }}
-                title={`${point.date}: ${point.score}`}
-              />
-            ))}
-          </div>
-          <div className="trend-labels">
-            {trend.map((point, index) => (
-              <span key={`${point.date || "day"}-${index}`}>{point.date.slice(5)}</span>
-            ))}
-          </div>
+          {weekLogs.length === 0 ? (
+            <div className="muted">최근 7일 기록이 없습니다.</div>
+          ) : (
+            <>
+              <div className="bars">
+                {trend.map((point, index) => (
+                  <div
+                    key={`${point.date || "day"}-${index}`}
+                    className="bar"
+                    style={{ height: `${Math.max(point.score, 5)}%` }}
+                    title={`${point.date}: ${point.score}`}
+                  />
+                ))}
+              </div>
+              <div className="trend-labels">
+                {trend.map((point, index) => (
+                  <span key={`${point.date || "day"}-${index}`}>{point.date.slice(5)}</span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="card">
           <h3>Mood Top3</h3>
@@ -356,7 +394,9 @@ export default function Dashboard() {
       <section className="grid two">
         <div className="card">
           <h3>{routineTemplate.header}</h3>
-          <p className="muted">{routineText}</p>
+          <p className="muted">
+            {weekLogs.length === 0 ? "최근 기록이 없어 기본 루틴을 제안합니다." : routineText}
+          </p>
         </div>
         <div className="card">
           <h3>Recent Logs</h3>
