@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
@@ -23,6 +32,11 @@ export default function Dashboard() {
   const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{ displayName: string; jobType: string }>({
+    displayName: "",
+    jobType: "",
+  });
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -37,26 +51,27 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return;
 
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-      try {
-        const today = new Date();
-        const start = new Date();
-        start.setDate(today.getDate() - 6);
-        const startDate = start.toISOString().slice(0, 10);
+    const today = new Date();
+    const start = new Date();
+    start.setDate(today.getDate() - 6);
+    const startDate = start.toISOString().slice(0, 10);
 
-        const logsQuery = query(
-          collection(db, "stressLogs"),
-          where("uid", "==", user.uid),
-          where("date", ">=", startDate),
-          orderBy("date", "asc")
-        );
-        const snapshot = await getDocs(logsQuery);
-        const logs = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<StressLog, "id">),
+    const logsQuery = query(
+      collection(db, "stressLogs"),
+      where("uid", "==", user.uid),
+      where("date", ">=", startDate),
+      orderBy("date", "asc")
+    );
+
+    const logsUnsub = onSnapshot(
+      logsQuery,
+      (snapshot) => {
+        const logs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<StressLog, "id">),
         }));
 
         const trendMap = new Map<string, number>();
@@ -77,14 +92,45 @@ export default function Dashboard() {
         setTrend(nextTrend);
         setWeekLogs(logs);
         setRecent(logs.slice(-3).reverse());
-      } catch (err) {
+        setLastSyncedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+        setLoading(false);
+      },
+      () => {
         setError("최근 7일 데이터를 불러오지 못했습니다.");
-      } finally {
         setLoading(false);
       }
-    };
+    );
 
-    load();
+    const profileRef = doc(db, "users", user.uid);
+    const profileUnsub = onSnapshot(
+      profileRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data() as { displayName?: string; jobType?: string };
+          setProfile({
+            displayName: data.displayName ?? user.displayName ?? "Anonymous",
+            jobType: data.jobType ?? "",
+          });
+        } else {
+          setProfile({
+            displayName: user.displayName ?? "Anonymous",
+            jobType: "",
+          });
+        }
+        setLastSyncedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      },
+      () => {
+        setProfile({
+          displayName: user.displayName ?? "Anonymous",
+          jobType: "",
+        });
+      }
+    );
+
+    return () => {
+      logsUnsub();
+      profileUnsub();
+    };
   }, [user]);
 
   const weeklyAvg = useMemo(() => {
@@ -316,6 +362,13 @@ export default function Dashboard() {
           </p>
           <div className="muted" style={{ marginTop: 12 }}>
             최근 로그: {latestLogDate ?? "-"} · 기록 수: {weekLogs.length}건
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            프로필: {profile.displayName || "-"} · 직종: {profile.jobType || "-"} ·
+            실시간 동기화 중
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            마지막 동기화: {lastSyncedAt ?? "-"}
           </div>
         </div>
         <div className="hero-metric">

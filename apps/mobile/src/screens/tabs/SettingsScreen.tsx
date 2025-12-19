@@ -9,6 +9,7 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [form, setForm] = useState({ displayName: "", jobType: "" });
 
   useEffect(() => {
@@ -44,16 +45,18 @@ export default function SettingsScreen() {
     if (!user) return;
     setSaving(true);
     setError(null);
+    setSuccess(null);
     try {
       await setDoc(
         doc(db, "users", user.uid),
         {
           displayName: form.displayName,
           jobType: form.jobType,
-          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
+      setSuccess("저장되었습니다.");
     } catch (err) {
       setError("설정 저장에 실패했습니다.");
     } finally {
@@ -80,6 +83,8 @@ export default function SettingsScreen() {
           value={form.jobType}
           onChangeText={(text) => setForm((prev) => ({ ...prev, jobType: text }))}
         />
+        {error && <Text style={styles.error}>{error}</Text>}
+        {success && <Text style={styles.success}>{success}</Text>}
         <TouchableOpacity style={styles.primaryButton} onPress={save} disabled={saving}>
           <Text style={styles.primaryButtonText}>{saving ? "저장 중..." : "저장"}</Text>
         </TouchableOpacity>
@@ -136,6 +141,10 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 12,
     color: "#b3261e",
+  },
+  success: {
+    fontSize: 12,
+    color: "#1a7f37",
   },
   primaryButton: {
     backgroundColor: "#111",
