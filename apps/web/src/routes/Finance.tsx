@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
@@ -10,6 +20,13 @@ export default function Finance() {
   const [logs, setLogs] = useState<FinanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    category: "",
+    amount: "",
+    memo: "",
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -46,6 +63,46 @@ export default function Finance() {
     return () => unsubscribe();
   }, [user]);
 
+  const addFinance = async () => {
+    if (!user) return;
+    setError(null);
+    const amountValue = Number(form.amount);
+    if (!form.date || !form.category || Number.isNaN(amountValue)) {
+      setError("필수 값을 입력하세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "financeLogs"), {
+        uid: user.uid,
+        date: form.date,
+        category: form.category,
+        amount: amountValue,
+        memo: form.memo,
+        createdAt: serverTimestamp(),
+      });
+      setForm({
+        date: new Date().toISOString().slice(0, 10),
+        category: "",
+        amount: "",
+        memo: "",
+      });
+    } catch (err) {
+      setError("지출 추가에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeFinance = async (logId: string) => {
+    if (!confirm("이 지출을 삭제할까요?")) return;
+    try {
+      await deleteDoc(doc(db, "financeLogs", logId));
+    } catch (err) {
+      setError("지출 삭제에 실패했습니다.");
+    }
+  };
+
   const monthTotal = useMemo(
     () => logs.reduce((acc, log) => acc + (log.amount || 0), 0),
     [logs]
@@ -71,6 +128,61 @@ export default function Finance() {
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
+
+      <section className="card">
+        <h3>지출 추가</h3>
+        <div className="form-grid">
+          <label>
+            Date
+            <input
+              className="input"
+              type="date"
+              value={form.date}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, date: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Category
+            <input
+              className="input"
+              value={form.category}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, category: event.target.value }))
+              }
+              placeholder="예: 식비, 교통, 취미"
+            />
+          </label>
+          <label>
+            Amount
+            <input
+              className="input"
+              type="number"
+              value={form.amount}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, amount: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Memo
+            <input
+              className="input"
+              value={form.memo}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, memo: event.target.value }))
+              }
+              placeholder="짧게 메모"
+            />
+          </label>
+        </div>
+        <div className="button-row">
+          <button className="primary-button" onClick={addFinance} disabled={saving}>
+            {saving ? "저장 중..." : "저장"}
+          </button>
+        </div>
+      </section>
 
       <section className="grid two">
         <div className="card">
@@ -106,6 +218,11 @@ export default function Finance() {
                 <div className="muted">{log.memo}</div>
               </div>
               <div className="pill">{log.amount.toLocaleString()}원</div>
+              <div className="log-actions">
+                <button className="danger-button" onClick={() => removeFinance(log.id)}>
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
