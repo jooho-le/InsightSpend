@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -6,13 +6,14 @@ import {
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   serverTimestamp,
   where,
 } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
-import type { StressLog } from "../models";
+import type { FinanceLog, StressLog } from "../models";
 import { routineTemplate } from "../promptTemplates";
 
 type TrendPoint = {
@@ -30,6 +31,8 @@ export default function Dashboard() {
   const [trend, setTrend] = useState<TrendPoint[]>(emptyTrend);
   const [recent, setRecent] = useState<StressLog[]>([]);
   const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
+  const [stress14Logs, setStress14Logs] = useState<StressLog[]>([]);
+  const [financeLogs, setFinanceLogs] = useState<FinanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ displayName: string; jobType: string }>({
@@ -47,6 +50,7 @@ export default function Dashboard() {
     memo: "",
     score: "",
   });
+  const lastInsightKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -58,6 +62,12 @@ export default function Dashboard() {
     const start = new Date();
     start.setDate(today.getDate() - 6);
     const startDate = start.toISOString().slice(0, 10);
+    const start14 = new Date();
+    start14.setDate(today.getDate() - 13);
+    const start14Date = start14.toISOString().slice(0, 10);
+    const start28 = new Date();
+    start28.setDate(today.getDate() - 27);
+    const start28Date = start28.toISOString().slice(0, 10);
 
     const logsQuery = query(
       collection(db, "stressLogs"),
@@ -101,6 +111,50 @@ export default function Dashboard() {
       }
     );
 
+    const stress14Query = query(
+      collection(db, "stressLogs"),
+      where("uid", "==", user.uid),
+      where("date", ">=", start14Date),
+      orderBy("date", "asc")
+    );
+
+    const stress14Unsub = onSnapshot(
+      stress14Query,
+      (snapshot) => {
+        const logs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<StressLog, "id">),
+        }));
+        setStress14Logs(logs);
+        setLastSyncedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      },
+      () => {
+        setError("최근 14일 데이터를 불러오지 못했습니다.");
+      }
+    );
+
+    const financeQuery = query(
+      collection(db, "financeLogs"),
+      where("uid", "==", user.uid),
+      where("date", ">=", start28Date),
+      orderBy("date", "asc")
+    );
+
+    const financeUnsub = onSnapshot(
+      financeQuery,
+      (snapshot) => {
+        const logs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<FinanceLog, "id">),
+        }));
+        setFinanceLogs(logs);
+        setLastSyncedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      },
+      () => {
+        setError("지출 데이터를 불러오지 못했습니다.");
+      }
+    );
+
     const profileRef = doc(db, "users", user.uid);
     const profileUnsub = onSnapshot(
       profileRef,
@@ -129,6 +183,8 @@ export default function Dashboard() {
 
     return () => {
       logsUnsub();
+      stress14Unsub();
+      financeUnsub();
       profileUnsub();
     };
   }, [user]);
@@ -207,6 +263,121 @@ export default function Dashboard() {
     return `${avgText} ${focusText}`;
   }, [weekLogs.length, weeklyAvg]);
 
+  const financeTopCategory = useMemo(() => {
+    const totals = new Map<string, number>();
+    const today = new Date();
+    const start14 = new Date();
+    start14.setDate(today.getDate() - 13);
+    const start14Date = start14.toISOString().slice(0, 10);
+    financeLogs
+      .filter((log) => log.date >= start14Date)
+      .forEach((log) => {
+        const key = log.category.trim() || "기타";
+        totals.set(key, (totals.get(key) ?? 0) + log.amount);
+      });
+    const sorted = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] ?? "기타";
+  }, [financeLogs]);
+
+  const spendSurge = useMemo(() => {
+    const today = new Date();
+    const start14 = new Date();
+    start14.setDate(today.getDate() - 13);
+    const start28 = new Date();
+    start28.setDate(today.getDate() - 27);
+    const start14Date = start14.toISOString().slice(0, 10);
+    const start28Date = start28.toISOString().slice(0, 10);
+
+    const recentTotal = financeLogs
+      .filter((log) => log.date >= start14Date)
+      .reduce((acc, log) => acc + log.amount, 0);
+    const prevTotal = financeLogs
+      .filter((log) => log.date >= start28Date && log.date < start14Date)
+      .reduce((acc, log) => acc + log.amount, 0);
+    const recentAvg = recentTotal / 14;
+    const prevAvg = prevTotal / 14;
+    if (prevAvg <= 0) {
+      return recentAvg > 0;
+    }
+    return recentAvg >= prevAvg * 1.5;
+  }, [financeLogs]);
+
+  const highStressDays = useMemo(() => {
+    return stress14Logs
+      .filter((log) => log.score >= 70)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [stress14Logs]);
+
+  const insightText = useMemo(() => {
+    if (stress14Logs.length === 0 && financeLogs.length === 0) {
+      return "최근 14일 기준으로 정서와 지출 데이터를 더 쌓아주세요.";
+    }
+    const stressText =
+      highStressDays.length > 0
+        ? `고스트레스 기록이 ${highStressDays.length}일 있어요.`
+        : "고스트레스 기록은 아직 없습니다.";
+    const spendText = spendSurge
+      ? "최근 2주 지출이 이전 대비 크게 늘었어요."
+      : "최근 2주 지출은 평소 범위에 있어요.";
+    const categoryText = `최근 2주 가장 큰 지출 카테고리는 ${financeTopCategory}입니다.`;
+    return `${stressText} ${spendText} ${categoryText}`;
+  }, [financeLogs.length, financeTopCategory, highStressDays.length, spendSurge, stress14Logs.length]);
+
+  const alternativeRoutines = useMemo(
+    () => [
+      {
+        title: "10분 산책",
+        reason: "짧은 걷기만으로도 긴장도를 낮추고 충동 소비를 줄이는 데 도움됩니다.",
+      },
+      {
+        title: "호흡 리셋",
+        reason: "3분 복식호흡으로 감정 반응을 진정시키면 지출 결정을 더 차분하게 볼 수 있어요.",
+      },
+      {
+        title: "가벼운 스트레칭",
+        reason: "몸을 풀어주면 스트레스 해소 욕구를 다른 행동으로 전환할 수 있어요.",
+      },
+      {
+        title: "감정 메모",
+        reason: "지출 전에 감정을 적으면 원인-행동 연결고리가 명확해집니다.",
+      },
+    ],
+    []
+  );
+
+  const highStressSpendLogs = useMemo(() => {
+    const byDate = new Map<string, FinanceLog[]>();
+    highStressDays.forEach((day) => {
+      byDate.set(day.date, []);
+    });
+    financeLogs.forEach((log) => {
+      const list = byDate.get(log.date);
+      if (list) {
+        list.push(log);
+      }
+    });
+    return Array.from(byDate.entries());
+  }, [financeLogs, highStressDays]);
+
+  useEffect(() => {
+    if (!user) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const payload = {
+      date: today,
+      insightText,
+      spendSurge,
+      topCategory: financeTopCategory,
+      highStressDates: highStressDays.map((log) => log.date),
+      alternatives: alternativeRoutines,
+      updatedAt: serverTimestamp(),
+    };
+    const key = JSON.stringify(payload);
+    if (lastInsightKey.current === key) return;
+    lastInsightKey.current = key;
+    void setDoc(doc(db, "insights", user.uid, "daily", today), payload, { merge: true });
+  }, [alternativeRoutines, financeTopCategory, highStressDays, insightText, spendSurge, user]);
+
   const addLog = async () => {
     if (!user) return;
     setAddError(null);
@@ -235,44 +406,10 @@ export default function Dashboard() {
         score: "",
       });
       setShowAdd(false);
-      setLoading(true);
-      setError(null);
-      const today = new Date();
-      const start = new Date();
-      start.setDate(today.getDate() - 6);
-      const startDate = start.toISOString().slice(0, 10);
-      const logsQuery = query(
-        collection(db, "stressLogs"),
-        where("uid", "==", user.uid),
-        where("date", ">=", startDate),
-        orderBy("date", "asc")
-      );
-      const snapshot = await getDocs(logsQuery);
-      const logs = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<StressLog, "id">),
-      }));
-      setWeekLogs(logs);
-      const trendMap = new Map<string, number>();
-      logs.forEach((log) => {
-        trendMap.set(log.date, log.score);
-      });
-      const nextTrend = Array.from({ length: 7 }).map((_, index) => {
-        const date = new Date(start);
-        date.setDate(start.getDate() + index);
-        const key = date.toISOString().slice(0, 10);
-        return {
-          date: key,
-          score: trendMap.get(key) ?? 0,
-        };
-      });
-      setTrend(nextTrend);
-      setRecent(logs.slice(-3).reverse());
     } catch (err) {
       setAddError("로그 추가에 실패했습니다.");
     } finally {
       setSaving(false);
-      setLoading(false);
     }
   };
 
@@ -471,6 +608,68 @@ export default function Dashboard() {
                   <div className="muted">{log.context}</div>
                 </div>
                 <div className="pill">{log.score}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid two">
+        <div className="card">
+          <h3>정서-지출 인사이트 카드</h3>
+          <p className="muted">{insightText}</p>
+          <div className="insight-list" style={{ marginTop: 12 }}>
+            <div className="insight-row">
+              <span>고스트레스 기준</span>
+              <span className="pill">score ≥ 70</span>
+            </div>
+            <div className="insight-row">
+              <span>지출 급증</span>
+              <span className="pill">{spendSurge ? "감지됨" : "안정적"}</span>
+            </div>
+            <div className="insight-row">
+              <span>Top 카테고리</span>
+              <span className="pill">{financeTopCategory}</span>
+            </div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+              “지출로 푸는 대신” 추천 루틴
+            </div>
+            <div className="insight-list">
+              {alternativeRoutines.slice(0, 5).map((item) => (
+                <div key={item.title} className="insight-row">
+                  <span>{item.title}</span>
+                  <span className="muted">{item.reason}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <h3>고스트레스 TOP3일 지출 내역</h3>
+          {highStressDays.length === 0 && (
+            <div className="muted">최근 14일에 고스트레스 기록이 없습니다.</div>
+          )}
+          <div className="log-list">
+            {highStressSpendLogs.map(([date, logs]) => (
+              <div key={date} className="log-item">
+                <div className="pill">{date.slice(5)}</div>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {logs.length === 0 ? "지출 없음" : `${logs.length}건 지출`}
+                  </div>
+                  <div className="muted">
+                    {logs.length === 0
+                      ? "해당 날짜 지출이 없습니다."
+                      : logs
+                          .map((log) => `${log.category} ${log.amount.toLocaleString()}원`)
+                          .join(" · ")}
+                  </div>
+                </div>
+                <div className="pill">
+                  {logs.reduce((acc, log) => acc + log.amount, 0).toLocaleString()}원
+                </div>
               </div>
             ))}
           </div>
