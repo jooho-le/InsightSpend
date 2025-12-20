@@ -3,11 +3,12 @@ import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-na
 import AddLogScreen from "./tabs/AddLogScreen";
 import ChatScreen from "./tabs/ChatScreen";
 import DashboardScreen from "./tabs/DashboardScreen";
+import FinanceScreen from "./tabs/FinanceScreen";
 import InsightsScreen from "./tabs/InsightsScreen";
 import LogsScreen from "./tabs/LogsScreen";
 import SettingsScreen from "./tabs/SettingsScreen";
 
-type TabKey = "dashboard" | "add" | "logs" | "chat" | "insights" | "settings";
+type TabKey = "dashboard" | "add" | "logs" | "chat" | "insights" | "settings" | "finance";
 
 export default function HomeTabs() {
   const [tab, setTab] = useState<TabKey>("dashboard");
@@ -21,6 +22,7 @@ export default function HomeTabs() {
         {tab === "chat" && <ChatScreen />}
         {tab === "insights" && <InsightsScreen />}
         {tab === "settings" && <SettingsScreen />}
+        {tab === "finance" && <FinanceScreen />}
       </View>
       <View style={styles.tabBar}>
         <TabButton label="요약" active={tab === "dashboard"} onPress={() => setTab("dashboard")} />
@@ -29,6 +31,7 @@ export default function HomeTabs() {
         <TabButton label="챗봇" active={tab === "chat"} onPress={() => setTab("chat")} />
         <TabButton label="인사이트" active={tab === "insights"} onPress={() => setTab("insights")} />
         <TabButton label="설정" active={tab === "settings"} onPress={() => setTab("settings")} />
+        <TabButton label="지출" active={tab === "finance"} onPress={() => setTab("finance")} />
       </View>
     </SafeAreaView>
   );
