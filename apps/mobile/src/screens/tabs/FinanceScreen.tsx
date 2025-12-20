@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import {
   addDoc,
@@ -30,9 +30,14 @@ export default function FinanceScreen() {
 
   useEffect(() => {
     if (!user) return;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      .toISOString()
+      .slice(0, 10);
     const logsQuery = query(
       collection(db, "financeLogs"),
       where("uid", "==", user.uid),
+      where("date", ">=", monthStart),
       orderBy("date", "desc")
     );
     const unsubscribe = onSnapshot(
@@ -53,6 +58,20 @@ export default function FinanceScreen() {
 
     return () => unsubscribe();
   }, [user]);
+
+  const monthTotal = useMemo(
+    () => logs.reduce((acc, log) => acc + (log.amount || 0), 0),
+    [logs]
+  );
+
+  const categoryTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    logs.forEach((log) => {
+      const key = log.category.trim() || "기타";
+      totals.set(key, (totals.get(key) ?? 0) + log.amount);
+    });
+    return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+  }, [logs]);
 
   const addFinance = async () => {
     if (!user) return;
@@ -166,6 +185,25 @@ export default function FinanceScreen() {
           </View>
         ))}
       </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>월간 총지출</Text>
+        <Text style={styles.stat}>{monthTotal.toLocaleString()}원</Text>
+        <Text style={styles.muted}>이번 달 누적 합계</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>카테고리별 합계</Text>
+        {categoryTotals.length === 0 && (
+          <Text style={styles.muted}>지출 기록이 없습니다.</Text>
+        )}
+        {categoryTotals.map(([category, total]) => (
+          <View key={category} style={styles.row}>
+            <Text style={styles.rowTitle}>{category}</Text>
+            <Text style={styles.amountText}>{total.toLocaleString()}원</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -219,6 +257,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
+    fontWeight: "600",
+  },
+  stat: {
+    fontSize: 26,
     fontWeight: "600",
   },
   row: {
