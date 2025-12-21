@@ -282,15 +282,6 @@ export default function Dashboard() {
       .slice(0, 3);
   }, [dailySummaries]);
 
-  const latestSummary = useMemo(() => {
-    const reversed = [...dailySummaries].reverse();
-    return (
-      reversed.find((summary) => summary.stressCount > 0 || summary.dailyExpense > 0) ||
-      dailySummaries[dailySummaries.length - 1] ||
-      null
-    );
-  }, [dailySummaries]);
-
   const insightText = useMemo(() => {
     if (dailySummaries.length === 0) {
       return "최근 14일 기준으로 정서와 지출 데이터를 더 쌓아주세요.";
@@ -305,80 +296,6 @@ export default function Dashboard() {
     const categoryText = `최근 2주 가장 큰 지출 카테고리는 ${financeTopCategory}입니다.`;
     return `${stressText} ${spendText} ${categoryText}`;
   }, [dailySummaries.length, financeTopCategory, highStressDays.length, spendSurge]);
-
-  const { routineReason, quickRoutines, deepRoutines } = useMemo(() => {
-    const quick = [
-      {
-        title: "4-7-8 호흡 60초",
-        reason: "숨을 4초 들이마시고 7초 멈춘 뒤 8초 내쉬며 긴장을 낮춰요.",
-      },
-      {
-        title: "2분 바디 스캔",
-        reason: "어깨·턱·손목의 힘을 풀며 감정을 빠르게 안정시켜요.",
-      },
-    ];
-
-    const deep = [];
-    const topCategory = latestSummary?.topCategories[0]?.category ?? "기타";
-    const context = latestSummary?.topContext ?? "";
-
-    if (spendSurge) {
-      quick.push({
-        title: "지출 충동 90초 멈춤",
-        reason: "손목·어깨 스트레칭으로 충동을 끊고 다시 판단할 시간을 확보해요.",
-      });
-    }
-
-    if (topCategory.includes("배달")) {
-      deep.push({
-        title: "10분 간단식 + 물 한 컵",
-        reason: "배달 충동을 줄이고 몸을 먼저 안정시키는 루틴이에요.",
-      });
-    } else if (topCategory.includes("쇼핑")) {
-      deep.push({
-        title: "장바구니 24시간 보류",
-        reason: "지출을 미루고 필요한 항목만 위시리스트로 남겨요.",
-      });
-    } else if (topCategory.includes("카페")) {
-      deep.push({
-        title: "15분 산책 + 따뜻한 물",
-        reason: "카페 대신 몸의 긴장을 풀고 기분을 전환해요.",
-      });
-    }
-
-    if (context.includes("대인")) {
-      deep.push({
-        title: "대화 스크립트 1문장 + 15분 걷기",
-        reason: "감정을 정리하고 다음 대화를 준비하는 루틴이에요.",
-      });
-    } else if (context.includes("야근") || context.includes("업무")) {
-      deep.push({
-        title: "퇴근 전 10분 스트레칭",
-        reason: "업무 긴장을 풀고 소비 충동을 낮춰요.",
-      });
-    }
-
-    if (deep.length === 0) {
-      deep.push({
-        title: "20분 집중 세션",
-        reason: "작은 목표에 집중하며 스트레스가 소비로 번지는 것을 막아요.",
-      });
-    }
-
-    const scoreText = latestSummary?.stressScoreMax
-      ? `스트레스 점수 ${latestSummary.stressScoreMax}`
-      : "최근 스트레스 기록";
-    const spendText =
-      avgExpense14 && latestSummary
-        ? `평균 대비 ${Math.round((latestSummary.dailyExpense / avgExpense14) * 100)}%`
-        : "지출 변화";
-
-    return {
-      quickRoutines: quick.slice(0, 3),
-      deepRoutines: deep.slice(0, 3),
-      routineReason: `${scoreText}, ${spendText} 수준이라 소비 대신 회복 루틴을 추천해요.`,
-    };
-  }, [avgExpense14, latestSummary, spendSurge]);
 
   const insightSummary = useMemo(() => {
     if (dailySummaries.length === 0) {
@@ -518,7 +435,7 @@ export default function Dashboard() {
         <div>
           <h2>이번 주 리듬을 빠르게 정리하세요.</h2>
           <p>
-            {insightSummary} {routineReason}
+            {insightSummary}
           </p>
           <div className="muted" style={{ marginTop: 12 }}>
             최근 로그: {latestLogDateLabel} · 기록 수: {weekLogs.length.toLocaleString()}건
@@ -607,23 +524,7 @@ export default function Dashboard() {
       <section className="grid two">
         <div className="card">
           <h3>지출 대신 회복 루틴</h3>
-          <p className="muted">{routineReason}</p>
-          <div className="insight-list" style={{ marginTop: 12 }}>
-            {quickRoutines.map((item) => (
-              <div key={item.title} className="insight-row">
-                <span>{item.title}</span>
-                <span className="pill">1~5분</span>
-              </div>
-            ))}
-          </div>
-          <div className="insight-list" style={{ marginTop: 12 }}>
-            {deepRoutines.map((item) => (
-              <div key={item.title} className="insight-row">
-                <span>{item.title}</span>
-                <span className="pill">10~30분</span>
-              </div>
-            ))}
-          </div>
+          <p className="muted">지금은 실제 데이터 기반 추천만 보여줍니다.</p>
         </div>
         <div className="card">
           <h3>Recent Logs</h3>
@@ -666,17 +567,8 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>
-              “지출로 푸는 대신” 추천 루틴
-            </div>
-            <div className="insight-list">
-              {quickRoutines.concat(deepRoutines).slice(0, 5).map((item) => (
-                <div key={item.title} className="insight-row">
-                  <span>{item.title}</span>
-                  <span className="muted">{item.reason}</span>
-                </div>
-              ))}
-            </div>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>“지출로 푸는 대신”</div>
+            <div className="muted">실제 추천 로직이 연결되면 여기에서 보여줍니다.</div>
           </div>
         </div>
         <div className="card">
