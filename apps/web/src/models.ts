@@ -16,3 +16,16 @@ export type FinanceLog = {
   amount: number;
   memo: string;
 };
+
+export type DailyInsightSummary = {
+  id: string;
+  uid: string;
+  date: string;
+  stressScoreAvg: number;
+  stressScoreMax: number;
+  stressCount: number;
+  topMood: string | null;
+  topContext: string | null;
+  dailyExpense: number;
+  topCategories: { category: string; amount: number }[];
+};

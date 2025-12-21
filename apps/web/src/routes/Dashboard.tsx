@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
   doc,
   onSnapshot,
   query,
-  setDoc,
   serverTimestamp,
   where,
 } from "firebase/firestore";
@@ -13,7 +12,11 @@ import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { FinanceLog, StressLog } from "../models";
-import { routineTemplate } from "../promptTemplates";
+import {
+  buildDateRange,
+  computeDailySummary,
+  updateDailySummaryForDate,
+} from "../utils/dailySummary";
 
 type TrendPoint = {
   date: string;
@@ -49,7 +52,13 @@ export default function Dashboard() {
     memo: "",
     score: "",
   });
-  const lastInsightKey = useRef<string | null>(null);
+  const dailySummaries = useMemo(() => {
+    if (!user) return [];
+    const dates = buildDateRange(14);
+    return dates.map((date) =>
+      computeDailySummary(user.uid, date, stress14Logs, financeLogs)
+    );
+  }, [financeLogs, stress14Logs, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -224,21 +233,6 @@ export default function Dashboard() {
       .slice(0, 3);
   }, [weekLogs]);
 
-  const routineText = useMemo(() => {
-    const topMood = topMoods[0]?.[0] ?? "Neutral";
-    const focus = weeklyAvg >= 70 ? "회복 시간을 확보하는 것" : "집중 리듬을 유지하는 것";
-    const actions =
-      weeklyAvg >= 70
-        ? "짧은 휴식, 수분 보충, 퇴근 전 10분 스트레칭"
-        : "작은 목표 설정, 20분 집중 세션, 저녁 산책";
-
-    return routineTemplate.prompt
-      .replace("{{topMood}}", topMood)
-      .replace("{{avg}}", weeklyAvg ? String(weeklyAvg) : "0")
-      .replace("{{focus}}", focus)
-      .replace("{{actions}}", actions);
-  }, [topMoods, weeklyAvg]);
-
   const recoveryIndex = useMemo(() => {
     if (!weeklyAvg) return null;
     return Math.max(0, 100 - weeklyAvg);
@@ -256,66 +250,49 @@ export default function Dashboard() {
     return `${month}.${day}`;
   }, [latestLogDate]);
 
-  const insightSummary = useMemo(() => {
-    if (weekLogs.length === 0) {
-      return "최근 7일 기록이 없어 기본 루틴을 제안합니다.";
-    }
-    const avgText = `지난 7일 평균 스트레스 점수는 ${weeklyAvg}점입니다.`;
-    const focusText =
-      weeklyAvg >= 70
-        ? "이번 주는 회복 시간을 확보하는 것이 중요합니다."
-        : "이번 주는 집중 리듬을 유지하는 것이 중요합니다.";
-    return `${avgText} ${focusText}`;
-  }, [weekLogs.length, weeklyAvg]);
-
   const financeTopCategory = useMemo(() => {
     const totals = new Map<string, number>();
-    const today = new Date();
-    const start14 = new Date();
-    start14.setDate(today.getDate() - 13);
-    const start14Date = start14.toISOString().slice(0, 10);
-    financeLogs
-      .filter((log) => log.date >= start14Date)
-      .forEach((log) => {
-        const key = log.category.trim() || "기타";
-        totals.set(key, (totals.get(key) ?? 0) + log.amount);
+    dailySummaries.forEach((summary) => {
+      summary.topCategories.forEach((entry) => {
+        const key = entry.category.trim() || "기타";
+        totals.set(key, (totals.get(key) ?? 0) + entry.amount);
       });
+    });
     const sorted = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
     return sorted[0]?.[0] ?? "기타";
-  }, [financeLogs]);
+  }, [dailySummaries]);
+
+  const avgExpense14 = useMemo(() => {
+    if (dailySummaries.length === 0) return 0;
+    const total = dailySummaries.reduce((acc, summary) => acc + summary.dailyExpense, 0);
+    return Math.round(total / dailySummaries.length);
+  }, [dailySummaries]);
 
   const spendSurge = useMemo(() => {
-    const today = new Date();
-    const start14 = new Date();
-    start14.setDate(today.getDate() - 13);
-    const start28 = new Date();
-    start28.setDate(today.getDate() - 27);
-    const start14Date = start14.toISOString().slice(0, 10);
-    const start28Date = start28.toISOString().slice(0, 10);
-
-    const recentTotal = financeLogs
-      .filter((log) => log.date >= start14Date)
-      .reduce((acc, log) => acc + log.amount, 0);
-    const prevTotal = financeLogs
-      .filter((log) => log.date >= start28Date && log.date < start14Date)
-      .reduce((acc, log) => acc + log.amount, 0);
-    const recentAvg = recentTotal / 14;
-    const prevAvg = prevTotal / 14;
-    if (prevAvg <= 0) {
-      return recentAvg > 0;
-    }
-    return recentAvg >= prevAvg * 1.5;
-  }, [financeLogs]);
+    if (avgExpense14 === 0) return false;
+    const lastSummary = dailySummaries[dailySummaries.length - 1];
+    if (!lastSummary) return false;
+    return lastSummary.dailyExpense >= avgExpense14 * 1.5;
+  }, [avgExpense14, dailySummaries]);
 
   const highStressDays = useMemo(() => {
-    return stress14Logs
-      .filter((log) => log.score >= 70)
-      .sort((a, b) => b.score - a.score)
+    return dailySummaries
+      .filter((summary) => summary.stressScoreMax >= 70)
+      .sort((a, b) => b.stressScoreMax - a.stressScoreMax)
       .slice(0, 3);
-  }, [stress14Logs]);
+  }, [dailySummaries]);
+
+  const latestSummary = useMemo(() => {
+    const reversed = [...dailySummaries].reverse();
+    return (
+      reversed.find((summary) => summary.stressCount > 0 || summary.dailyExpense > 0) ||
+      dailySummaries[dailySummaries.length - 1] ||
+      null
+    );
+  }, [dailySummaries]);
 
   const insightText = useMemo(() => {
-    if (stress14Logs.length === 0 && financeLogs.length === 0) {
+    if (dailySummaries.length === 0) {
       return "최근 14일 기준으로 정서와 지출 데이터를 더 쌓아주세요.";
     }
     const stressText =
@@ -327,61 +304,95 @@ export default function Dashboard() {
       : "최근 2주 지출은 평소 범위에 있어요.";
     const categoryText = `최근 2주 가장 큰 지출 카테고리는 ${financeTopCategory}입니다.`;
     return `${stressText} ${spendText} ${categoryText}`;
-  }, [financeLogs.length, financeTopCategory, highStressDays.length, spendSurge, stress14Logs.length]);
+  }, [dailySummaries.length, financeTopCategory, highStressDays.length, spendSurge]);
 
-  const alternativeRoutines = useMemo(
-    () => [
+  const { routineReason, quickRoutines, deepRoutines } = useMemo(() => {
+    const quick = [
       {
-        title: "10분 산책",
-        reason: "짧은 걷기만으로도 긴장도를 낮추고 충동 소비를 줄이는 데 도움됩니다.",
+        title: "4-7-8 호흡 60초",
+        reason: "숨을 4초 들이마시고 7초 멈춘 뒤 8초 내쉬며 긴장을 낮춰요.",
       },
       {
-        title: "호흡 리셋",
-        reason: "3분 복식호흡으로 감정 반응을 진정시키면 지출 결정을 더 차분하게 볼 수 있어요.",
+        title: "2분 바디 스캔",
+        reason: "어깨·턱·손목의 힘을 풀며 감정을 빠르게 안정시켜요.",
       },
-      {
-        title: "가벼운 스트레칭",
-        reason: "몸을 풀어주면 스트레스 해소 욕구를 다른 행동으로 전환할 수 있어요.",
-      },
-      {
-        title: "감정 메모",
-        reason: "지출 전에 감정을 적으면 원인-행동 연결고리가 명확해집니다.",
-      },
-    ],
-    []
-  );
+    ];
 
-  const highStressSpendLogs = useMemo(() => {
-    const byDate = new Map<string, FinanceLog[]>();
-    highStressDays.forEach((day) => {
-      byDate.set(day.date, []);
-    });
-    financeLogs.forEach((log) => {
-      const list = byDate.get(log.date);
-      if (list) {
-        list.push(log);
-      }
-    });
-    return Array.from(byDate.entries());
-  }, [financeLogs, highStressDays]);
+    const deep = [];
+    const topCategory = latestSummary?.topCategories[0]?.category ?? "기타";
+    const context = latestSummary?.topContext ?? "";
 
-  useEffect(() => {
-    if (!user) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const payload = {
-      date: today,
-      insightText,
-      spendSurge,
-      topCategory: financeTopCategory,
-      highStressDates: highStressDays.map((log) => log.date),
-      alternatives: alternativeRoutines,
-      updatedAt: serverTimestamp(),
+    if (spendSurge) {
+      quick.push({
+        title: "지출 충동 90초 멈춤",
+        reason: "손목·어깨 스트레칭으로 충동을 끊고 다시 판단할 시간을 확보해요.",
+      });
+    }
+
+    if (topCategory.includes("배달")) {
+      deep.push({
+        title: "10분 간단식 + 물 한 컵",
+        reason: "배달 충동을 줄이고 몸을 먼저 안정시키는 루틴이에요.",
+      });
+    } else if (topCategory.includes("쇼핑")) {
+      deep.push({
+        title: "장바구니 24시간 보류",
+        reason: "지출을 미루고 필요한 항목만 위시리스트로 남겨요.",
+      });
+    } else if (topCategory.includes("카페")) {
+      deep.push({
+        title: "15분 산책 + 따뜻한 물",
+        reason: "카페 대신 몸의 긴장을 풀고 기분을 전환해요.",
+      });
+    }
+
+    if (context.includes("대인")) {
+      deep.push({
+        title: "대화 스크립트 1문장 + 15분 걷기",
+        reason: "감정을 정리하고 다음 대화를 준비하는 루틴이에요.",
+      });
+    } else if (context.includes("야근") || context.includes("업무")) {
+      deep.push({
+        title: "퇴근 전 10분 스트레칭",
+        reason: "업무 긴장을 풀고 소비 충동을 낮춰요.",
+      });
+    }
+
+    if (deep.length === 0) {
+      deep.push({
+        title: "20분 집중 세션",
+        reason: "작은 목표에 집중하며 스트레스가 소비로 번지는 것을 막아요.",
+      });
+    }
+
+    const scoreText = latestSummary?.stressScoreMax
+      ? `스트레스 점수 ${latestSummary.stressScoreMax}`
+      : "최근 스트레스 기록";
+    const spendText =
+      avgExpense14 && latestSummary
+        ? `평균 대비 ${Math.round((latestSummary.dailyExpense / avgExpense14) * 100)}%`
+        : "지출 변화";
+
+    return {
+      quickRoutines: quick.slice(0, 3),
+      deepRoutines: deep.slice(0, 3),
+      routineReason: `${scoreText}, ${spendText} 수준이라 소비 대신 회복 루틴을 추천해요.`,
     };
-    const key = JSON.stringify(payload);
-    if (lastInsightKey.current === key) return;
-    lastInsightKey.current = key;
-    void setDoc(doc(db, "insights", user.uid, "daily", today), payload, { merge: true });
-  }, [alternativeRoutines, financeTopCategory, highStressDays, insightText, spendSurge, user]);
+  }, [avgExpense14, latestSummary, spendSurge]);
+
+  const insightSummary = useMemo(() => {
+    if (dailySummaries.length === 0) {
+      return "최근 14일 기록이 없어 기본 인사이트를 제안합니다.";
+    }
+    const avgText = weeklyAvg
+      ? `지난 7일 평균 스트레스 점수는 ${weeklyAvg}점입니다.`
+      : "지난 7일 스트레스 평균이 아직 없습니다.";
+    const spendText =
+      avgExpense14 > 0
+        ? `최근 14일 평균 지출은 ${avgExpense14.toLocaleString()}원입니다.`
+        : "최근 14일 지출 기록이 없습니다.";
+    return `${avgText} ${spendText}`;
+  }, [avgExpense14, dailySummaries.length, weeklyAvg]);
 
   const addLog = async () => {
     if (!user) return;
@@ -403,6 +414,7 @@ export default function Dashboard() {
         score: scoreValue,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, addForm.date);
       setAddForm({
         date: new Date().toISOString().slice(0, 10),
         mood: "",
@@ -506,7 +518,7 @@ export default function Dashboard() {
         <div>
           <h2>이번 주 리듬을 빠르게 정리하세요.</h2>
           <p>
-            {insightSummary} {routineText}
+            {insightSummary} {routineReason}
           </p>
           <div className="muted" style={{ marginTop: 12 }}>
             최근 로그: {latestLogDateLabel} · 기록 수: {weekLogs.length.toLocaleString()}건
@@ -594,10 +606,24 @@ export default function Dashboard() {
 
       <section className="grid two">
         <div className="card">
-          <h3>{routineTemplate.header}</h3>
-          <p className="muted">
-            {weekLogs.length === 0 ? "최근 기록이 없어 기본 루틴을 제안합니다." : routineText}
-          </p>
+          <h3>지출 대신 회복 루틴</h3>
+          <p className="muted">{routineReason}</p>
+          <div className="insight-list" style={{ marginTop: 12 }}>
+            {quickRoutines.map((item) => (
+              <div key={item.title} className="insight-row">
+                <span>{item.title}</span>
+                <span className="pill">1~5분</span>
+              </div>
+            ))}
+          </div>
+          <div className="insight-list" style={{ marginTop: 12 }}>
+            {deepRoutines.map((item) => (
+              <div key={item.title} className="insight-row">
+                <span>{item.title}</span>
+                <span className="pill">10~30분</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="card">
           <h3>Recent Logs</h3>
@@ -630,7 +656,9 @@ export default function Dashboard() {
             </div>
             <div className="insight-row">
               <span>지출 급증</span>
-              <span className="pill">{spendSurge ? "감지됨" : "안정적"}</span>
+              <span className="pill">
+                {avgExpense14 === 0 ? "기록 없음" : spendSurge ? "감지됨" : "안정적"}
+              </span>
             </div>
             <div className="insight-row">
               <span>Top 카테고리</span>
@@ -642,7 +670,7 @@ export default function Dashboard() {
               “지출로 푸는 대신” 추천 루틴
             </div>
             <div className="insight-list">
-              {alternativeRoutines.slice(0, 5).map((item) => (
+              {quickRoutines.concat(deepRoutines).slice(0, 5).map((item) => (
                 <div key={item.title} className="insight-row">
                   <span>{item.title}</span>
                   <span className="muted">{item.reason}</span>
@@ -657,23 +685,21 @@ export default function Dashboard() {
             <div className="muted">최근 14일에 고스트레스 기록이 없습니다.</div>
           )}
           <div className="log-list">
-            {highStressSpendLogs.map(([date, logs]) => (
-              <div key={date} className="log-item">
-                <div className="pill">{date.slice(5)}</div>
+            {highStressDays.map((summary) => (
+              <div key={summary.date} className="log-item">
+                <div className="pill">{summary.date.slice(5)}</div>
                 <div>
                   <div style={{ fontWeight: 600 }}>
-                    {logs.length === 0 ? "지출 없음" : `${logs.length}건 지출`}
+                    {summary.topCategories[0]?.category ?? "지출 없음"}
                   </div>
                   <div className="muted">
-                    {logs.length === 0
-                      ? "해당 날짜 지출이 없습니다."
-                      : logs
-                          .map((log) => `${log.category} ${log.amount.toLocaleString()}원`)
-                          .join(" · ")}
+                    {summary.dailyExpense
+                      ? `${summary.dailyExpense.toLocaleString()}원`
+                      : "해당 날짜 지출이 없습니다."}
                   </div>
                 </div>
                 <div className="pill">
-                  {logs.reduce((acc, log) => acc + log.amount, 0).toLocaleString()}원
+                  {summary.dailyExpense ? summary.dailyExpense.toLocaleString() : 0}원
                 </div>
               </div>
             ))}

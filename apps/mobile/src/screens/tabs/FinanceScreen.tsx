@@ -13,6 +13,7 @@ import {
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import type { FinanceLog } from "../../models";
+import { updateDailySummaryForDate } from "../../utils/dailySummary";
 
 export default function FinanceScreen() {
   const { user } = useAuth();
@@ -92,6 +93,7 @@ export default function FinanceScreen() {
         memo: form.memo,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, form.date);
       setForm({
         date: new Date().toISOString().slice(0, 10),
         category: "",
@@ -105,7 +107,7 @@ export default function FinanceScreen() {
     }
   };
 
-  const removeFinance = (logId: string) => {
+  const removeFinance = (log: FinanceLog) => {
     Alert.alert("지출 삭제", "이 지출을 삭제할까요?", [
       { text: "취소", style: "cancel" },
       {
@@ -113,7 +115,8 @@ export default function FinanceScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteDoc(doc(db, "financeLogs", logId));
+            await deleteDoc(doc(db, "financeLogs", log.id));
+            await updateDailySummaryForDate(db, user.uid, log.date);
           } catch (err) {
             setError("지출 삭제에 실패했습니다.");
           }
@@ -179,7 +182,7 @@ export default function FinanceScreen() {
             <View style={styles.amount}>
               <Text style={styles.amountText}>{log.amount.toLocaleString()}원</Text>
             </View>
-            <TouchableOpacity style={styles.deleteButton} onPress={() => removeFinance(log.id)}>
+            <TouchableOpacity style={styles.deleteButton} onPress={() => removeFinance(log)}>
               <Text style={styles.deleteButtonText}>Delete</Text>
             </TouchableOpacity>
           </View>

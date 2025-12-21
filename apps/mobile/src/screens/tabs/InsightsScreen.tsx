@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
-import type { StressLog } from "../../models";
-import { routineTemplate } from "../../promptTemplates";
+import type { DailyInsightSummary } from "../../models";
+import { buildDateRange, syncDailySummariesForRange } from "../../utils/dailySummary";
 
 export default function InsightsScreen() {
   const { user } = useAuth();
-  const [weekLogs, setWeekLogs] = useState<StressLog[]>([]);
+  const [dailySummaries, setDailySummaries] = useState<DailyInsightSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,23 +17,9 @@ export default function InsightsScreen() {
       setLoading(true);
       setError(null);
       try {
-        const today = new Date();
-        const start = new Date();
-        start.setDate(today.getDate() - 6);
-        const startDate = start.toISOString().slice(0, 10);
-
-        const logsQuery = query(
-          collection(db, "stressLogs"),
-          where("uid", "==", user.uid),
-          where("date", ">=", startDate),
-          orderBy("date", "asc")
-        );
-        const snapshot = await getDocs(logsQuery);
-        const logs = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<StressLog, "id">),
-        }));
-        setWeekLogs(logs);
+        const dates = buildDateRange(14);
+        const summaries = await syncDailySummariesForRange(db, user.uid, dates);
+        setDailySummaries(summaries);
       } catch (err) {
         setError("인사이트 데이터를 불러오지 못했습니다.");
       } finally {
@@ -44,15 +29,21 @@ export default function InsightsScreen() {
     load();
   }, [user]);
 
+  const weekSummaries = useMemo(() => dailySummaries.slice(-7), [dailySummaries]);
+
   const weeklyAvg = useMemo(() => {
-    const scores = weekLogs.map((log) => log.score).filter((score) => score > 0);
+    const scores = weekSummaries
+      .map((summary) => summary.stressScoreAvg)
+      .filter((score) => score > 0);
     if (scores.length === 0) return 0;
     const sum = scores.reduce((acc, cur) => acc + cur, 0);
     return Math.round(sum / scores.length);
-  }, [weekLogs]);
+  }, [weekSummaries]);
 
   const { maxScore, minScore } = useMemo(() => {
-    const scores = weekLogs.map((log) => log.score).filter((score) => score > 0);
+    const scores = weekSummaries
+      .map((summary) => summary.stressScoreMax)
+      .filter((score) => score > 0);
     if (scores.length === 0) {
       return { maxScore: 0, minScore: 0 };
     }
@@ -60,40 +51,128 @@ export default function InsightsScreen() {
       maxScore: Math.max(...scores),
       minScore: Math.min(...scores),
     };
-  }, [weekLogs]);
+  }, [weekSummaries]);
 
   const topMoods = useMemo(() => {
     const freq = new Map<string, number>();
-    weekLogs.forEach((log) => {
-      const key = log.mood.trim();
+    weekSummaries.forEach((summary) => {
+      const key = summary.topMood?.trim() ?? "";
       if (!key) return;
       freq.set(key, (freq.get(key) ?? 0) + 1);
     });
     return Array.from(freq.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
-  }, [weekLogs]);
+  }, [weekSummaries]);
 
-  const routineText = useMemo(() => {
-    const topMood = topMoods[0]?.[0] ?? "Neutral";
-    const focus = weeklyAvg >= 70 ? "회복 시간을 확보하는 것" : "집중 리듬을 유지하는 것";
-    const actions =
-      weeklyAvg >= 70
-        ? "짧은 휴식, 수분 보충, 퇴근 전 10분 스트레칭"
-        : "작은 목표 설정, 20분 집중 세션, 저녁 산책";
+  const latestSummary = useMemo(() => {
+    const reversed = [...dailySummaries].reverse();
+    return (
+      reversed.find((summary) => summary.stressCount > 0 || summary.dailyExpense > 0) ||
+      dailySummaries[dailySummaries.length - 1] ||
+      null
+    );
+  }, [dailySummaries]);
 
-    return routineTemplate.prompt
-      .replace("{{topMood}}", topMood)
-      .replace("{{avg}}", weeklyAvg ? String(weeklyAvg) : "0")
-      .replace("{{focus}}", focus)
-      .replace("{{actions}}", actions);
-  }, [topMoods, weeklyAvg]);
+  const avgExpense14 = useMemo(() => {
+    if (dailySummaries.length === 0) return 0;
+    const total = dailySummaries.reduce((acc, summary) => acc + summary.dailyExpense, 0);
+    return Math.round(total / dailySummaries.length);
+  }, [dailySummaries]);
+
+  const spendSurge = useMemo(() => {
+    if (!latestSummary || avgExpense14 === 0) return false;
+    return latestSummary.dailyExpense >= avgExpense14 * 1.5;
+  }, [avgExpense14, latestSummary]);
+
+  const financeTopCategory = useMemo(() => {
+    const totals = new Map<string, number>();
+    dailySummaries.forEach((summary) => {
+      summary.topCategories.forEach((entry) => {
+        const key = entry.category.trim() || "기타";
+        totals.set(key, (totals.get(key) ?? 0) + entry.amount);
+      });
+    });
+    const sorted = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] ?? "기타";
+  }, [dailySummaries]);
+
+  const { routineReason, routines } = useMemo(() => {
+    const quick = [
+      { title: "4-7-8 호흡 60초", duration: "1~5분" },
+      { title: "2분 바디 스캔", duration: "1~5분" },
+    ];
+    const deep = [];
+    const topCategory = latestSummary?.topCategories[0]?.category ?? "기타";
+    const context = latestSummary?.topContext ?? "";
+
+    if (spendSurge) {
+      quick.push({ title: "지출 충동 90초 멈춤", duration: "1~5분" });
+    }
+
+    if (topCategory.includes("배달")) {
+      deep.push({ title: "10분 간단식 + 물 한 컵", duration: "10~30분" });
+    } else if (topCategory.includes("쇼핑")) {
+      deep.push({ title: "장바구니 24시간 보류", duration: "10~30분" });
+    } else if (topCategory.includes("카페")) {
+      deep.push({ title: "15분 산책 + 따뜻한 물", duration: "10~30분" });
+    }
+
+    if (context.includes("대인")) {
+      deep.push({ title: "대화 스크립트 1문장 + 15분 걷기", duration: "10~30분" });
+    } else if (context.includes("야근") || context.includes("업무")) {
+      deep.push({ title: "퇴근 전 10분 스트레칭", duration: "10~30분" });
+    }
+
+    if (deep.length === 0) {
+      deep.push({ title: "20분 집중 세션", duration: "10~30분" });
+    }
+
+    const scoreText = latestSummary?.stressScoreMax
+      ? `스트레스 점수 ${latestSummary.stressScoreMax}`
+      : "최근 스트레스 기록";
+    const spendText =
+      avgExpense14 && latestSummary
+        ? `평균 대비 ${Math.round((latestSummary.dailyExpense / avgExpense14) * 100)}%`
+        : "지출 변화";
+
+    return {
+      routines: quick.concat(deep).slice(0, 5),
+      routineReason: `${scoreText}, ${spendText}라 소비 대신 회복 루틴을 추천해요.`,
+    };
+  }, [avgExpense14, latestSummary, spendSurge]);
+
+  const insightText = useMemo(() => {
+    if (dailySummaries.length === 0) {
+      return "최근 14일 기록이 없어 정서-지출 인사이트를 만들기 어렵습니다.";
+    }
+    const stressText =
+      weekSummaries.length > 0
+        ? `이번 주 평균 스트레스는 ${weeklyAvg}점입니다.`
+        : "이번 주 스트레스 기록이 아직 없습니다.";
+    const spendText =
+      avgExpense14 > 0
+        ? `최근 14일 평균 지출은 ${avgExpense14.toLocaleString()}원입니다.`
+        : "최근 14일 지출 기록이 없습니다.";
+    const categoryText = `최근 지출 Top 카테고리는 ${financeTopCategory}입니다.`;
+    return `${stressText} ${spendText} ${categoryText}`;
+  }, [avgExpense14, dailySummaries.length, financeTopCategory, weekSummaries.length, weeklyAvg]);
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>인사이트</Text>
       {loading && <Text style={styles.muted}>불러오는 중...</Text>}
       {error && <Text style={styles.error}>{error}</Text>}
+
+      <View style={styles.card}>
+        <Text style={styles.label}>정서-지출 인사이트</Text>
+        <Text style={styles.body}>{insightText}</Text>
+        <View style={styles.badgeRow}>
+          <Text style={styles.badge}>score ≥ 70</Text>
+          <Text style={styles.badge}>{spendSurge ? "지출 급증" : "지출 안정"}</Text>
+          <Text style={styles.badge}>{financeTopCategory}</Text>
+        </View>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.label}>Weekly Avg</Text>
@@ -118,8 +197,16 @@ export default function InsightsScreen() {
         ))}
       </View>
       <View style={styles.card}>
-        <Text style={styles.label}>{routineTemplate.header}</Text>
-        <Text style={styles.body}>{routineText}</Text>
+        <Text style={styles.label}>지출 대신 회복 루틴</Text>
+        <Text style={styles.body}>{routineReason}</Text>
+        <View style={styles.routineList}>
+          {routines.map((routine) => (
+            <View key={routine.title} style={styles.routineRow}>
+              <Text style={styles.body}>{routine.title}</Text>
+              <Text style={styles.moodCount}>{routine.duration}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -170,5 +257,28 @@ const styles = StyleSheet.create({
   moodCount: {
     fontSize: 12,
     color: "#444",
+  },
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  badge: {
+    fontSize: 12,
+    color: "#444",
+    backgroundColor: "#f3efe6",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  routineList: {
+    marginTop: 8,
+    gap: 8,
+  },
+  routineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 });
