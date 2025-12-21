@@ -3,7 +3,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -41,9 +40,7 @@ export default function DashboardScreen() {
 
     const logsQuery = query(
       collection(db, "stressLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", startDate),
-      orderBy("date", "asc")
+      where("uid", "==", user.uid)
     );
 
     const logsUnsub = onSnapshot(
@@ -53,10 +50,14 @@ export default function DashboardScreen() {
           id: doc.id,
           ...(doc.data() as Omit<StressLog, "id">),
         }));
-        setWeekLogs(logs);
+        const weekLogs = logs
+          .filter((log) => log.date && log.date >= startDate)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        setWeekLogs(weekLogs);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error("Dashboard week logs snapshot failed:", err);
         setError("통계 데이터를 불러오지 못했습니다.");
         setLoading(false);
       }
@@ -64,9 +65,7 @@ export default function DashboardScreen() {
 
     const stress14Query = query(
       collection(db, "stressLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", start14Date),
-      orderBy("date", "asc")
+      where("uid", "==", user.uid)
     );
 
     const stress14Unsub = onSnapshot(
@@ -76,18 +75,20 @@ export default function DashboardScreen() {
           id: doc.id,
           ...(doc.data() as Omit<StressLog, "id">),
         }));
-        setStress14Logs(logs);
+        const recentLogs = logs
+          .filter((log) => log.date && log.date >= start14Date)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        setStress14Logs(recentLogs);
       },
-      () => {
+      (err) => {
+        console.error("Dashboard 14-day logs snapshot failed:", err);
         setError("최근 14일 데이터를 불러오지 못했습니다.");
       }
     );
 
     const financeQuery = query(
       collection(db, "financeLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", start28Date),
-      orderBy("date", "asc")
+      where("uid", "==", user.uid)
     );
 
     const financeUnsub = onSnapshot(
@@ -97,9 +98,13 @@ export default function DashboardScreen() {
           id: doc.id,
           ...(doc.data() as Omit<FinanceLog, "id">),
         }));
-        setFinanceLogs(logs);
+        const recentLogs = logs
+          .filter((log) => log.date && log.date >= start28Date)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        setFinanceLogs(recentLogs);
       },
-      () => {
+      (err) => {
+        console.error("Dashboard finance logs snapshot failed:", err);
         setError("지출 데이터를 불러오지 못했습니다.");
       }
     );

@@ -5,7 +5,6 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -45,16 +44,19 @@ export default function Logs() {
     try {
       const logsQuery = query(
         collection(db, "stressLogs"),
-        where("uid", "==", user.uid),
-        orderBy("date", "desc")
+        where("uid", "==", user.uid)
       );
       const snapshot = await getDocs(logsQuery);
       const nextLogs = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<StressLog, "id">),
       }));
-      setLogs(nextLogs);
+      const sortedLogs = nextLogs.sort((a, b) =>
+        (b.date || "").localeCompare(a.date || "")
+      );
+      setLogs(sortedLogs);
     } catch (err) {
+      console.error("Logs load failed:", err);
       setError("로그 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
@@ -141,9 +143,11 @@ export default function Logs() {
   const removeLog = async (logId: string) => {
     if (!confirm("이 로그를 삭제할까요?")) return;
     try {
+      setError(null);
       await deleteDoc(doc(db, "stressLogs", logId));
-      await loadLogs();
+      setLogs((prev) => prev.filter((log) => log.id !== logId));
     } catch (err) {
+      console.error("로그 삭제 실패:", err);
       setError("로그 삭제에 실패했습니다.");
     }
   };

@@ -6,7 +6,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   where,
@@ -30,27 +29,28 @@ export default function FinanceScreen() {
 
   useEffect(() => {
     if (!user) return;
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      .toISOString()
-      .slice(0, 10);
     const logsQuery = query(
       collection(db, "financeLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", monthStart),
-      orderBy("date", "desc")
+      where("uid", "==", user.uid)
     );
     const unsubscribe = onSnapshot(
       logsQuery,
       (snapshot) => {
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+          .toISOString()
+          .slice(0, 10);
         const nextLogs = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<FinanceLog, "id">),
         }));
-        setLogs(nextLogs);
+        const monthLogs = nextLogs
+          .filter((log) => log.date && log.date >= monthStart)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        setLogs(monthLogs);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error("Finance logs snapshot failed:", err);
         setError("지출을 불러오지 못했습니다.");
         setLoading(false);
       }
