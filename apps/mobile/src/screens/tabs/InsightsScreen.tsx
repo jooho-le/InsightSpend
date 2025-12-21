@@ -97,51 +97,6 @@ export default function InsightsScreen() {
     return sorted[0]?.[0] ?? "기타";
   }, [dailySummaries]);
 
-  const { routineReason, routines } = useMemo(() => {
-    const quick = [
-      { title: "4-7-8 호흡 60초", duration: "1~5분" },
-      { title: "2분 바디 스캔", duration: "1~5분" },
-    ];
-    const deep = [];
-    const topCategory = latestSummary?.topCategories[0]?.category ?? "기타";
-    const context = latestSummary?.topContext ?? "";
-
-    if (spendSurge) {
-      quick.push({ title: "지출 충동 90초 멈춤", duration: "1~5분" });
-    }
-
-    if (topCategory.includes("배달")) {
-      deep.push({ title: "10분 간단식 + 물 한 컵", duration: "10~30분" });
-    } else if (topCategory.includes("쇼핑")) {
-      deep.push({ title: "장바구니 24시간 보류", duration: "10~30분" });
-    } else if (topCategory.includes("카페")) {
-      deep.push({ title: "15분 산책 + 따뜻한 물", duration: "10~30분" });
-    }
-
-    if (context.includes("대인")) {
-      deep.push({ title: "대화 스크립트 1문장 + 15분 걷기", duration: "10~30분" });
-    } else if (context.includes("야근") || context.includes("업무")) {
-      deep.push({ title: "퇴근 전 10분 스트레칭", duration: "10~30분" });
-    }
-
-    if (deep.length === 0) {
-      deep.push({ title: "20분 집중 세션", duration: "10~30분" });
-    }
-
-    const scoreText = latestSummary?.stressScoreMax
-      ? `스트레스 점수 ${latestSummary.stressScoreMax}`
-      : "최근 스트레스 기록";
-    const spendText =
-      avgExpense14 && latestSummary
-        ? `평균 대비 ${Math.round((latestSummary.dailyExpense / avgExpense14) * 100)}%`
-        : "지출 변화";
-
-    return {
-      routines: quick.concat(deep).slice(0, 5),
-      routineReason: `${scoreText}, ${spendText}라 소비 대신 회복 루틴을 추천해요.`,
-    };
-  }, [avgExpense14, latestSummary, spendSurge]);
-
   const insightText = useMemo(() => {
     if (dailySummaries.length === 0) {
       return "최근 14일 기록이 없어 정서-지출 인사이트를 만들기 어렵습니다.";
@@ -198,15 +153,7 @@ export default function InsightsScreen() {
       </View>
       <View style={styles.card}>
         <Text style={styles.label}>지출 대신 회복 루틴</Text>
-        <Text style={styles.body}>{routineReason}</Text>
-        <View style={styles.routineList}>
-          {routines.map((routine) => (
-            <View key={routine.title} style={styles.routineRow}>
-              <Text style={styles.body}>{routine.title}</Text>
-              <Text style={styles.moodCount}>{routine.duration}</Text>
-            </View>
-          ))}
-        </View>
+        <Text style={styles.body}>지금은 실제 데이터 기반 추천만 보여줍니다.</Text>
       </View>
     </View>
   );
@@ -271,14 +218,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-  },
-  routineList: {
-    marginTop: 8,
-    gap: 8,
-  },
-  routineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
 });

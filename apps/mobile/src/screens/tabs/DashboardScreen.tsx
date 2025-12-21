@@ -196,28 +196,6 @@ export default function DashboardScreen() {
     return `${stressText} ${spendText} ${categoryText}`;
   }, [financeLogs.length, financeTopCategory, highStressDays.length, spendSurge, stress14Logs.length]);
 
-  const alternativeRoutines = useMemo(
-    () => [
-      {
-        title: "10분 산책",
-        reason: "짧은 걷기만으로도 긴장도를 낮추고 충동 소비를 줄이는 데 도움됩니다.",
-      },
-      {
-        title: "호흡 리셋",
-        reason: "3분 복식호흡으로 감정 반응을 진정시키면 지출 결정을 더 차분하게 볼 수 있어요.",
-      },
-      {
-        title: "가벼운 스트레칭",
-        reason: "몸을 풀어주면 스트레스 해소 욕구를 다른 행동으로 전환할 수 있어요.",
-      },
-      {
-        title: "감정 메모",
-        reason: "지출 전에 감정을 적으면 원인-행동 연결고리가 명확해집니다.",
-      },
-    ],
-    []
-  );
-
   const highStressSpendLogs = useMemo(() => {
     const byDate = new Map<string, FinanceLog[]>();
     highStressDays.forEach((day) => {
@@ -241,14 +219,13 @@ export default function DashboardScreen() {
       spendSurge,
       topCategory: financeTopCategory,
       highStressDates: highStressDays.map((log) => log.date),
-      alternatives: alternativeRoutines,
       updatedAt: serverTimestamp(),
     };
     const key = JSON.stringify(payload);
     if (lastInsightKey.current === key) return;
     lastInsightKey.current = key;
     void setDoc(doc(db, "insights", user.uid, "daily", today), payload, { merge: true });
-  }, [alternativeRoutines, financeTopCategory, highStressDays, insightText, spendSurge, user]);
+  }, [financeTopCategory, highStressDays, insightText, spendSurge, user]);
 
   return (
     <View style={styles.container}>
@@ -290,13 +267,8 @@ export default function DashboardScreen() {
           <Text style={styles.moodCount}>{financeTopCategory}</Text>
         </View>
         <View style={{ marginTop: 10 }}>
-          <Text style={styles.label}>“지출로 푸는 대신” 추천</Text>
-          {alternativeRoutines.slice(0, 5).map((item) => (
-            <View key={item.title} style={styles.moodRow}>
-              <Text style={styles.body}>{item.title}</Text>
-              <Text style={styles.muted}>{item.reason}</Text>
-            </View>
-          ))}
+          <Text style={styles.label}>“지출로 푸는 대신”</Text>
+          <Text style={styles.muted}>지금은 실제 데이터 기반 추천만 보여줍니다.</Text>
         </View>
       </View>
       <View style={styles.card}>
