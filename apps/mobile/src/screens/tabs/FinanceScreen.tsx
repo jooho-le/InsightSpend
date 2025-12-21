@@ -6,7 +6,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   where,
@@ -14,6 +13,7 @@ import {
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import type { FinanceLog } from "../../models";
+import { updateDailySummaryForDate } from "../../utils/dailySummary";
 
 export default function FinanceScreen() {
   const { user } = useAuth();
@@ -30,27 +30,28 @@ export default function FinanceScreen() {
 
   useEffect(() => {
     if (!user) return;
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      .toISOString()
-      .slice(0, 10);
     const logsQuery = query(
       collection(db, "financeLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", monthStart),
-      orderBy("date", "desc")
+      where("uid", "==", user.uid)
     );
     const unsubscribe = onSnapshot(
       logsQuery,
       (snapshot) => {
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+          .toISOString()
+          .slice(0, 10);
         const nextLogs = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<FinanceLog, "id">),
         }));
-        setLogs(nextLogs);
+        const monthLogs = nextLogs
+          .filter((log) => log.date && log.date >= monthStart)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        setLogs(monthLogs);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error("Finance logs snapshot failed:", err);
         setError("지출을 불러오지 못했습니다.");
         setLoading(false);
       }
@@ -92,6 +93,7 @@ export default function FinanceScreen() {
         memo: form.memo,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, form.date);
       setForm({
         date: new Date().toISOString().slice(0, 10),
         category: "",
@@ -105,7 +107,7 @@ export default function FinanceScreen() {
     }
   };
 
-  const removeFinance = (logId: string) => {
+  const removeFinance = (log: FinanceLog) => {
     Alert.alert("지출 삭제", "이 지출을 삭제할까요?", [
       { text: "취소", style: "cancel" },
       {
@@ -113,7 +115,8 @@ export default function FinanceScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteDoc(doc(db, "financeLogs", logId));
+            await deleteDoc(doc(db, "financeLogs", log.id));
+            await updateDailySummaryForDate(db, user.uid, log.date);
           } catch (err) {
             setError("지출 삭제에 실패했습니다.");
           }
@@ -179,7 +182,7 @@ export default function FinanceScreen() {
             <View style={styles.amount}>
               <Text style={styles.amountText}>{log.amount.toLocaleString()}원</Text>
             </View>
-            <TouchableOpacity style={styles.deleteButton} onPress={() => removeFinance(log.id)}>
+            <TouchableOpacity style={styles.deleteButton} onPress={() => removeFinance(log)}>
               <Text style={styles.deleteButtonText}>Delete</Text>
             </TouchableOpacity>
           </View>

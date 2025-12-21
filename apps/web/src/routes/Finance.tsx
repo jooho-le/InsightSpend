@@ -5,7 +5,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   where,
@@ -14,6 +13,7 @@ import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { FinanceLog } from "../models";
+import { updateDailySummaryForDate } from "../utils/dailySummary";
 
 export default function Finance() {
   const { user } = useAuth();
@@ -27,34 +27,36 @@ export default function Finance() {
     amount: "",
     memo: "",
   });
+  const canDelete = (log: FinanceLog) => !!user && log.uid === user.uid;
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
     setError(null);
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      .toISOString()
-      .slice(0, 10);
 
     const logsQuery = query(
       collection(db, "financeLogs"),
-      where("uid", "==", user.uid),
-      where("date", ">=", monthStart),
-      orderBy("date", "desc")
+      where("uid", "==", user.uid)
     );
 
     const unsubscribe = onSnapshot(
       logsQuery,
       (snapshot) => {
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+          .toISOString()
+          .slice(0, 10);
         const nextLogs = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<FinanceLog, "id">),
         }));
-        setLogs(nextLogs);
+        const monthLogs = nextLogs
+          .filter((log) => log.date && log.date >= monthStart)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        setLogs(monthLogs);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error("Finance logs snapshot failed:", err);
         setError("지출 데이터를 불러오지 못했습니다.");
         setLoading(false);
       }
@@ -81,6 +83,7 @@ export default function Finance() {
         memo: form.memo,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, form.date);
       setForm({
         date: new Date().toISOString().slice(0, 10),
         category: "",
@@ -94,11 +97,21 @@ export default function Finance() {
     }
   };
 
-  const removeFinance = async (logId: string) => {
+  const removeFinance = async (log: FinanceLog) => {
     if (!confirm("이 지출을 삭제할까요?")) return;
+    if (!canDelete(log)) {
+      setError("삭제 불가: 현재 로그인 uid와 지출 uid가 다릅니다. 로그인 계정을 확인하거나 문서 uid를 수정하세요.");
+      return;
+    }
     try {
-      await deleteDoc(doc(db, "financeLogs", logId));
+      setError(null);
+      await deleteDoc(doc(db, "financeLogs", log.id));
+      setLogs((prev) => prev.filter((item) => item.id !== log.id));
+      if (user) {
+        await updateDailySummaryForDate(db, user.uid, log.date);
+      }
     } catch (err) {
+      console.error("지출 삭제 실패:", err);
       setError("지출 삭제에 실패했습니다.");
     }
   };
@@ -128,6 +141,11 @@ export default function Finance() {
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
+      {user && (
+        <div className="muted" style={{ marginTop: 8 }}>
+          현재 로그인 uid: {user.uid}
+        </div>
+      )}
 
       <section className="card">
         <h3>지출 추가</h3>
@@ -215,11 +233,16 @@ export default function Finance() {
               <div className="pill">{log.date.slice(5)}</div>
               <div>
                 <div style={{ fontWeight: 600 }}>{log.category}</div>
-                <div className="muted">{log.memo}</div>
+                {!!log.memo && <div className="muted">{log.memo}</div>}
+                <div className="muted">uid: {log.uid}</div>
               </div>
               <div className="pill">{log.amount.toLocaleString()}원</div>
               <div className="log-actions">
-                <button className="danger-button" onClick={() => removeFinance(log.id)}>
+                <button
+                  className="danger-button"
+                  onClick={() => removeFinance(log)}
+                  disabled={!canDelete(log)}
+                >
                   Delete
                 </button>
               </div>

@@ -1,18 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import { collection, deleteDoc, doc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import type { StressLog } from "../../models";
+import { updateDailySummaryForDate } from "../../utils/dailySummary";
 
 export default function LogsScreen() {
   const { user } = useAuth();
@@ -27,8 +19,7 @@ export default function LogsScreen() {
 
     const logsQuery = query(
       collection(db, "stressLogs"),
-      where("uid", "==", user.uid),
-      orderBy("createdAt", "desc")
+      where("uid", "==", user.uid)
     );
 
     const unsubscribe = onSnapshot(
@@ -79,13 +70,14 @@ export default function LogsScreen() {
         memo: form.memo,
         score: scoreValue,
       });
+      await updateDailySummaryForDate(db, user.uid, editing.date);
       cancelEdit();
     } catch (err) {
       setError("수정에 실패했습니다.");
     }
   };
 
-  const removeLog = (logId: string) => {
+  const removeLog = (log: StressLog) => {
     Alert.alert("로그 삭제", "이 로그를 삭제할까요?", [
       { text: "취소", style: "cancel" },
       {
@@ -93,7 +85,8 @@ export default function LogsScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteDoc(doc(db, "stressLogs", logId));
+            await deleteDoc(doc(db, "stressLogs", log.id));
+            await updateDailySummaryForDate(db, user.uid, log.date);
           } catch (err) {
             setError("삭제에 실패했습니다.");
           }
@@ -166,7 +159,7 @@ export default function LogsScreen() {
               <TouchableOpacity style={styles.smallButton} onPress={() => startEdit(log)}>
                 <Text style={styles.smallButtonText}>Edit</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteButton} onPress={() => removeLog(log.id)}>
+              <TouchableOpacity style={styles.deleteButton} onPress={() => removeLog(log)}>
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
             </View>

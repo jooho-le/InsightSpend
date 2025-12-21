@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-nativ
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
+import { updateDailySummaryForDate } from "../../utils/dailySummary";
 
 export default function AddLogScreen() {
   const { user } = useAuth();
@@ -37,6 +38,7 @@ export default function AddLogScreen() {
         score: scoreValue,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, date);
       setSuccess("기록이 저장되었습니다.");
       setMood("");
       setContext("");

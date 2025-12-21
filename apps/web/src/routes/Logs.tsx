@@ -5,7 +5,6 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -15,6 +14,7 @@ import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { StressLog } from "../models";
+import { updateDailySummaryForDate } from "../utils/dailySummary";
 
 export default function Logs() {
   const { user } = useAuth();
@@ -37,6 +37,7 @@ export default function Logs() {
     memo: "",
     score: "",
   });
+  const canDelete = (log: StressLog) => !!user && log.uid === user.uid;
 
   const loadLogs = async () => {
     if (!user) return;
@@ -45,16 +46,19 @@ export default function Logs() {
     try {
       const logsQuery = query(
         collection(db, "stressLogs"),
-        where("uid", "==", user.uid),
-        orderBy("date", "desc")
+        where("uid", "==", user.uid)
       );
       const snapshot = await getDocs(logsQuery);
       const nextLogs = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<StressLog, "id">),
       }));
-      setLogs(nextLogs);
+      const sortedLogs = nextLogs.sort((a, b) =>
+        (b.date || "").localeCompare(a.date || "")
+      );
+      setLogs(sortedLogs);
     } catch (err) {
+      console.error("Logs load failed:", err);
       setError("로그 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
@@ -96,6 +100,9 @@ export default function Logs() {
         memo: form.memo,
         score: scoreValue,
       });
+      if (user) {
+        await updateDailySummaryForDate(db, user.uid, editing.date);
+      }
       await loadLogs();
       cancelEdit();
     } catch (err) {
@@ -123,6 +130,7 @@ export default function Logs() {
         score: scoreValue,
         createdAt: serverTimestamp(),
       });
+      await updateDailySummaryForDate(db, user.uid, createForm.date);
       setCreateForm({
         date: new Date().toISOString().slice(0, 10),
         mood: "",
@@ -138,12 +146,21 @@ export default function Logs() {
     }
   };
 
-  const removeLog = async (logId: string) => {
+  const removeLog = async (log: StressLog) => {
     if (!confirm("이 로그를 삭제할까요?")) return;
+    if (!canDelete(log)) {
+      setError("삭제 불가: 현재 로그인 uid와 로그 uid가 다릅니다. 로그인 계정을 확인하거나 문서 uid를 수정하세요.");
+      return;
+    }
     try {
-      await deleteDoc(doc(db, "stressLogs", logId));
-      await loadLogs();
+      setError(null);
+      await deleteDoc(doc(db, "stressLogs", log.id));
+      setLogs((prev) => prev.filter((item) => item.id !== log.id));
+      if (user) {
+        await updateDailySummaryForDate(db, user.uid, log.date);
+      }
     } catch (err) {
+      console.error("로그 삭제 실패:", err);
       setError("로그 삭제에 실패했습니다.");
     }
   };
@@ -162,6 +179,11 @@ export default function Logs() {
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
+      {user && (
+        <div className="muted" style={{ marginTop: 8 }}>
+          현재 로그인 uid: {user.uid}
+        </div>
+      )}
 
       {showCreate && (
         <section className="card">
@@ -295,14 +317,19 @@ export default function Logs() {
               <div>
                 <div style={{ fontWeight: 600 }}>{log.mood}</div>
                 <div className="muted">{log.context}</div>
-                <div className="muted">{log.memo}</div>
+                {!!log.memo && <div className="muted">{log.memo}</div>}
+                <div className="muted">uid: {log.uid}</div>
               </div>
               <div className="pill">{log.score}</div>
               <div className="log-actions">
                 <button className="secondary-button" onClick={() => startEdit(log)}>
                   Edit
                 </button>
-                <button className="danger-button" onClick={() => removeLog(log.id)}>
+                <button
+                  className="danger-button"
+                  onClick={() => removeLog(log)}
+                  disabled={!canDelete(log)}
+                >
                   Delete
                 </button>
               </div>
