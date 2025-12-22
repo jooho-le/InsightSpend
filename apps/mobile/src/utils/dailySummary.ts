@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -9,6 +10,7 @@ import {
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { DailyInsightSummary, FinanceLog, StressLog } from "../models";
+import { normalizeAiInsight } from "./aiInsights";
 
 type UserLogs = {
   stressLogs: StressLog[];
@@ -107,7 +109,18 @@ export const syncDailySummariesForRange = async (
   dates: string[]
 ) => {
   const { stressLogs, financeLogs } = await loadUserLogs(db, uid);
-  const summaries = dates.map((date) => computeDailySummary(uid, date, stressLogs, financeLogs));
+  const summaries = dates.map((date) =>
+    computeDailySummary(uid, date, stressLogs, financeLogs)
+  );
+  const summariesWithAi = await Promise.all(
+    summaries.map(async (summary) => {
+      const snap = await getDoc(doc(db, "insights", uid, "daily", summary.date));
+      const data = snap.exists() ? (snap.data() as { ai?: unknown; aiVersion?: number }) : null;
+      const ai = data ? normalizeAiInsight(data.ai) : null;
+      const aiVersion = typeof data?.aiVersion === "number" ? data.aiVersion : undefined;
+      return { ...summary, ai: ai ?? undefined, aiVersion };
+    })
+  );
   await Promise.all(
     summaries.map((summary) =>
       setDoc(
@@ -120,7 +133,7 @@ export const syncDailySummariesForRange = async (
       )
     )
   );
-  return summaries;
+  return summariesWithAi;
 };
 
 export const updateDailySummaryForDate = async (
@@ -130,6 +143,10 @@ export const updateDailySummaryForDate = async (
 ) => {
   const { stressLogs, financeLogs } = await loadUserLogs(db, uid);
   const summary = computeDailySummary(uid, date, stressLogs, financeLogs);
+  const snap = await getDoc(doc(db, "insights", uid, "daily", summary.date));
+  const data = snap.exists() ? (snap.data() as { ai?: unknown; aiVersion?: number }) : null;
+  const ai = data ? normalizeAiInsight(data.ai) : null;
+  const aiVersion = typeof data?.aiVersion === "number" ? data.aiVersion : undefined;
   await setDoc(
     doc(db, "insights", uid, "daily", summary.date),
     {
@@ -138,5 +155,5 @@ export const updateDailySummaryForDate = async (
     },
     { merge: true }
   );
-  return summary;
+  return { ...summary, ai: ai ?? undefined, aiVersion };
 };

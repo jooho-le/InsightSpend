@@ -1,16 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   query,
-  serverTimestamp,
-  setDoc,
   where,
 } from "firebase/firestore";
+import { isAiConfigured } from "../../ai";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
-import type { FinanceLog, StressLog } from "../../models";
+import type { AiInsight, FinanceLog, StressLog } from "../../models";
+import { buildDateRange, computeDailySummary } from "../../utils/dailySummary";
+import { ensureDailyAiInsight, normalizeAiInsight } from "../../utils/aiInsights";
 
 export default function DashboardScreen() {
   const { user, signOutUser } = useAuth();
@@ -19,7 +22,9 @@ export default function DashboardScreen() {
   const [financeLogs, setFinanceLogs] = useState<FinanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lastInsightKey = useRef<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -151,28 +156,34 @@ export default function DashboardScreen() {
     return sorted[0]?.[0] ?? "기타";
   }, [financeLogs]);
 
-  const spendSurge = useMemo(() => {
-    const today = new Date();
-    const start14 = new Date();
-    start14.setDate(today.getDate() - 13);
-    const start28 = new Date();
-    start28.setDate(today.getDate() - 27);
-    const start14Date = start14.toISOString().slice(0, 10);
-    const start28Date = start28.toISOString().slice(0, 10);
+  const dateRange14 = useMemo(() => buildDateRange(14), []);
 
-    const recentTotal = financeLogs
-      .filter((log) => log.date >= start14Date)
-      .reduce((acc, log) => acc + log.amount, 0);
-    const prevTotal = financeLogs
-      .filter((log) => log.date >= start28Date && log.date < start14Date)
-      .reduce((acc, log) => acc + log.amount, 0);
-    const recentAvg = recentTotal / 14;
-    const prevAvg = prevTotal / 14;
-    if (prevAvg <= 0) {
-      return recentAvg > 0;
-    }
-    return recentAvg >= prevAvg * 1.5;
-  }, [financeLogs]);
+  const dailySummaries = useMemo(() => {
+    if (!user) return [];
+    return dateRange14.map((date) =>
+      computeDailySummary(user.uid, date, stress14Logs, financeLogs)
+    );
+  }, [dateRange14, financeLogs, stress14Logs, user]);
+
+  const latestSummary = useMemo(() => {
+    const reversed = [...dailySummaries].reverse();
+    return (
+      reversed.find((summary) => summary.stressCount > 0 || summary.dailyExpense > 0) ||
+      dailySummaries[dailySummaries.length - 1] ||
+      null
+    );
+  }, [dailySummaries]);
+
+  const avgExpense14 = useMemo(() => {
+    if (dailySummaries.length === 0) return 0;
+    const total = dailySummaries.reduce((acc, summary) => acc + summary.dailyExpense, 0);
+    return Math.round(total / dailySummaries.length);
+  }, [dailySummaries]);
+
+  const spendSurge = useMemo(() => {
+    if (!latestSummary || avgExpense14 === 0) return false;
+    return latestSummary.dailyExpense >= avgExpense14 * 1.5;
+  }, [avgExpense14, latestSummary]);
 
   const highStressDays = useMemo(() => {
     return stress14Logs
@@ -211,21 +222,43 @@ export default function DashboardScreen() {
   }, [financeLogs, highStressDays]);
 
   useEffect(() => {
-    if (!user) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const payload = {
-      date: today,
-      insightText,
-      spendSurge,
-      topCategory: financeTopCategory,
-      highStressDates: highStressDays.map((log) => log.date),
-      updatedAt: serverTimestamp(),
+    if (!user || !latestSummary) {
+      setAiInsight(null);
+      return;
+    }
+    let active = true;
+    const loadAi = async () => {
+      if (!isAiConfigured) {
+        if (active) setAiInsight(null);
+        return;
+      }
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const snap = await getDoc(doc(db, "insights", user.uid, "daily", latestSummary.date));
+        const storedAi = normalizeAiInsight(snap.data()?.ai);
+        if (storedAi) {
+          if (active) setAiInsight(storedAi);
+          return;
+        }
+        const ai = await ensureDailyAiInsight(db, user.uid, latestSummary, {
+          avgExpense14,
+          spendSpike: spendSurge,
+          topCategories: latestSummary.topCategories.map((entry) => entry.category),
+        });
+        if (active) setAiInsight(ai);
+      } catch (err) {
+        console.error("Dashboard AI insight failed:", err);
+        if (active) setAiError("AI 추천을 불러오지 못했습니다.");
+      } finally {
+        if (active) setAiLoading(false);
+      }
     };
-    const key = JSON.stringify(payload);
-    if (lastInsightKey.current === key) return;
-    lastInsightKey.current = key;
-    void setDoc(doc(db, "insights", user.uid, "daily", today), payload, { merge: true });
-  }, [financeTopCategory, highStressDays, insightText, spendSurge, user]);
+    loadAi();
+    return () => {
+      active = false;
+    };
+  }, [avgExpense14, latestSummary, spendSurge, user]);
 
   return (
     <View style={styles.container}>
@@ -257,7 +290,7 @@ export default function DashboardScreen() {
       </View>
       <View style={styles.card}>
         <Text style={styles.label}>정서-지출 인사이트</Text>
-        <Text style={styles.body}>{insightText}</Text>
+        <Text style={styles.body}>{aiInsight?.summary ?? insightText}</Text>
         <View style={styles.moodRow}>
           <Text style={styles.muted}>지출 급증</Text>
           <Text style={styles.moodCount}>{spendSurge ? "감지됨" : "안정적"}</Text>
@@ -268,7 +301,27 @@ export default function DashboardScreen() {
         </View>
         <View style={{ marginTop: 10 }}>
           <Text style={styles.label}>“지출로 푸는 대신”</Text>
-          <Text style={styles.muted}>지금은 실제 데이터 기반 추천만 보여줍니다.</Text>
+          {!isAiConfigured && (
+            <Text style={styles.muted}>AI 키가 설정되지 않아 추천을 만들 수 없습니다.</Text>
+          )}
+          {aiLoading && <Text style={styles.muted}>AI 추천을 생성 중입니다...</Text>}
+          {aiError && <Text style={styles.muted}>{aiError}</Text>}
+          {aiInsight ? (
+            <>
+              <Text style={styles.muted}>{aiInsight.pattern}</Text>
+              {aiInsight.recommendations.map((rec) => (
+                <View key={`${rec.title}-${rec.duration}`} style={styles.moodRow}>
+                  <Text style={styles.body}>{`${rec.title} · ${rec.duration}`}</Text>
+                  <Text style={styles.moodCount}>{rec.type}</Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            !aiLoading &&
+            isAiConfigured && (
+              <Text style={styles.muted}>추천을 만들 충분한 기록이 없습니다.</Text>
+            )
+          )}
         </View>
       </View>
       <View style={styles.card}>

@@ -17,6 +17,22 @@ export type FinanceLog = {
   memo: string;
 };
 
+export type AiRecommendation = {
+  title: string;
+  duration: string;
+  type: "즉시" | "상황형" | "대체" | "회복";
+  steps: string[];
+  reason: string;
+};
+
+export type AiInsight = {
+  summary: string;
+  pattern: string;
+  recommendations: AiRecommendation[];
+  model: string;
+  generatedAt: string;
+};
+
 export type DailyInsightSummary = {
   id: string;
   uid: string;
@@ -28,4 +44,6 @@ export type DailyInsightSummary = {
   topContext: string | null;
   dailyExpense: number;
   topCategories: { category: string; amount: number }[];
+  ai?: AiInsight;
+  aiVersion?: number;
 };

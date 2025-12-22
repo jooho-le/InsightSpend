@@ -1,15 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { doc, getDoc } from "firebase/firestore";
+import { isAiConfigured } from "../../ai";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
-import type { DailyInsightSummary } from "../../models";
+import type { AiInsight, DailyInsightSummary } from "../../models";
 import { buildDateRange, syncDailySummariesForRange } from "../../utils/dailySummary";
+import { ensureDailyAiInsight, normalizeAiInsight } from "../../utils/aiInsights";
 
 export default function InsightsScreen() {
   const { user } = useAuth();
   const [dailySummaries, setDailySummaries] = useState<DailyInsightSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -113,6 +119,44 @@ export default function InsightsScreen() {
     return `${stressText} ${spendText} ${categoryText}`;
   }, [avgExpense14, dailySummaries.length, financeTopCategory, weekSummaries.length, weeklyAvg]);
 
+  useEffect(() => {
+    if (!user || !latestSummary) {
+      setAiInsight(null);
+      return;
+    }
+    let active = true;
+    const loadAi = async () => {
+      if (!isAiConfigured) {
+        if (active) setAiInsight(null);
+        return;
+      }
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const snap = await getDoc(doc(db, "insights", user.uid, "daily", latestSummary.date));
+        const storedAi = normalizeAiInsight(snap.data()?.ai);
+        if (storedAi) {
+          if (active) setAiInsight(storedAi);
+          return;
+        }
+        const ai = await ensureDailyAiInsight(db, user.uid, latestSummary, {
+          avgExpense14,
+          spendSpike: spendSurge,
+          topCategories: latestSummary.topCategories.map((entry) => entry.category),
+        });
+        if (active) setAiInsight(ai);
+      } catch (err) {
+        if (active) setAiError("AI 인사이트를 불러오지 못했습니다.");
+      } finally {
+        if (active) setAiLoading(false);
+      }
+    };
+    loadAi();
+    return () => {
+      active = false;
+    };
+  }, [avgExpense14, latestSummary, spendSurge, user]);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>인사이트</Text>
@@ -121,7 +165,7 @@ export default function InsightsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.label}>정서-지출 인사이트</Text>
-        <Text style={styles.body}>{insightText}</Text>
+        <Text style={styles.body}>{aiInsight?.summary ?? insightText}</Text>
         <View style={styles.badgeRow}>
           <Text style={styles.badge}>score ≥ 70</Text>
           <Text style={styles.badge}>{spendSurge ? "지출 급증" : "지출 안정"}</Text>
@@ -153,7 +197,27 @@ export default function InsightsScreen() {
       </View>
       <View style={styles.card}>
         <Text style={styles.label}>지출 대신 회복 루틴</Text>
-        <Text style={styles.body}>지금은 실제 데이터 기반 추천만 보여줍니다.</Text>
+        {!isAiConfigured && (
+          <Text style={styles.muted}>AI 키가 설정되지 않아 추천을 만들 수 없습니다.</Text>
+        )}
+        {aiLoading && <Text style={styles.muted}>AI 추천을 생성 중입니다...</Text>}
+        {aiError && <Text style={styles.muted}>{aiError}</Text>}
+        {aiInsight ? (
+          <>
+            <Text style={styles.body}>{aiInsight.pattern}</Text>
+            {aiInsight.recommendations.map((rec) => (
+              <View key={`${rec.title}-${rec.duration}`} style={styles.moodRow}>
+                <Text style={styles.body}>{`${rec.title} · ${rec.duration}`}</Text>
+                <Text style={styles.moodCount}>{rec.type}</Text>
+              </View>
+            ))}
+          </>
+        ) : (
+          !aiLoading &&
+          isAiConfigured && (
+            <Text style={styles.muted}>추천을 만들 충분한 기록이 없습니다.</Text>
+          )
+        )}
       </View>
     </View>
   );
