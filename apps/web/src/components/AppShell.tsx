@@ -21,9 +21,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink to="/chat" className={({ isActive }) => (isActive ? "active" : "")}>
             Empathy Chat
           </NavLink>
-          <NavLink to="/insights" className={({ isActive }) => (isActive ? "active" : "")}>
-            Insights
-          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
             Settings
           </NavLink>
