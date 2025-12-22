@@ -505,7 +505,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="grid three">
+      <section className="grid two">
         <div className="card">
           <h3>Weekly Avg</h3>
           <div className="stat">{weekLogs.length === 0 ? "-" : weeklyAvg || "-"}</div>
@@ -521,13 +521,6 @@ export default function Dashboard() {
           </div>
           <div className="muted">
             {weekLogs.length === 0 ? "최근 기록이 없습니다." : "이번 주 최고/최저 점수"}
-          </div>
-        </div>
-        <div className="card">
-          <h3>Top Moods</h3>
-          <div className="stat">{topMoods[0]?.[0] || "-"}</div>
-          <div className="muted">
-            {topMoods.length === 0 ? "최근 기록이 없습니다." : "가장 많이 기록된 감정"}
           </div>
         </div>
       </section>
@@ -638,13 +631,6 @@ export default function Dashboard() {
             <div className="insight-row">
               <span>Top 카테고리</span>
               <span className="pill">{financeTopCategory}</span>
-            </div>
-          </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>“지출로 푸는 대신”</div>
-            <div className="muted">
-              {aiInsight?.pattern ??
-                "AI 추천을 만들 충분한 기록이 없습니다."}
             </div>
           </div>
         </div>
