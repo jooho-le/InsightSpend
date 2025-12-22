@@ -15,6 +15,7 @@ import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { StressLog } from "../models";
 import { updateDailySummaryForDate } from "../utils/dailySummary";
+import { computeStressScore } from "../utils/stressScore";
 
 export default function Logs() {
   const { user } = useAuth();
@@ -28,16 +29,16 @@ export default function Logs() {
     mood: "",
     context: "",
     memo: "",
-    score: "",
   });
   const [createForm, setCreateForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     mood: "",
     context: "",
     memo: "",
-    score: "",
   });
   const canDelete = (log: StressLog) => !!user && log.uid === user.uid;
+  const editScore = computeStressScore(form.mood);
+  const createScore = computeStressScore(createForm.mood);
 
   const loadLogs = async () => {
     if (!user) return;
@@ -76,20 +77,18 @@ export default function Logs() {
       mood: log.mood,
       context: log.context,
       memo: log.memo,
-      score: String(log.score),
     });
   };
 
   const cancelEdit = () => {
     setEditing(null);
-    setForm({ mood: "", context: "", memo: "", score: "" });
+    setForm({ mood: "", context: "", memo: "" });
   };
 
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      const scoreValue = Number(form.score);
-      if (!form.mood || !form.context || Number.isNaN(scoreValue)) {
+      if (!form.mood || !form.context) {
         setError("필수 값을 입력하세요.");
         return;
       }
@@ -98,7 +97,7 @@ export default function Logs() {
         mood: form.mood,
         context: form.context,
         memo: form.memo,
-        score: scoreValue,
+        score: computeStressScore(form.mood),
       });
       if (user) {
         await updateDailySummaryForDate(db, user.uid, editing.date);
@@ -113,8 +112,7 @@ export default function Logs() {
   const addLog = async () => {
     if (!user) return;
     setError(null);
-    const scoreValue = Number(createForm.score);
-    if (!createForm.date || !createForm.mood || !createForm.context || Number.isNaN(scoreValue)) {
+    if (!createForm.date || !createForm.mood || !createForm.context) {
       setError("필수 값을 입력하세요.");
       return;
     }
@@ -127,7 +125,7 @@ export default function Logs() {
         mood: createForm.mood,
         context: createForm.context,
         memo: createForm.memo,
-        score: scoreValue,
+        score: computeStressScore(createForm.mood),
         createdAt: serverTimestamp(),
       });
       await updateDailySummaryForDate(db, user.uid, createForm.date);
@@ -136,7 +134,6 @@ export default function Logs() {
         mood: "",
         context: "",
         memo: "",
-        score: "",
       });
       await loadLogs();
     } catch (err) {
@@ -231,14 +228,12 @@ export default function Logs() {
               />
             </label>
             <label>
-              Score
+              Score (auto)
               <input
                 className="input"
                 type="number"
-                value={createForm.score}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, score: event.target.value }))
-                }
+                value={createForm.mood ? String(createScore) : ""}
+                readOnly
               />
             </label>
           </div>
@@ -285,14 +280,12 @@ export default function Logs() {
               />
             </label>
             <label>
-              Score
+              Score (auto)
               <input
                 className="input"
                 type="number"
-                value={form.score}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, score: event.target.value }))
-                }
+                value={form.mood ? String(editScore) : ""}
+                readOnly
               />
             </label>
           </div>

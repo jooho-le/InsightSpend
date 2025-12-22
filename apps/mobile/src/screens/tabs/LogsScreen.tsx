@@ -5,6 +5,7 @@ import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import type { StressLog } from "../../models";
 import { updateDailySummaryForDate } from "../../utils/dailySummary";
+import { computeStressScore } from "../../utils/stressScore";
 
 export default function LogsScreen() {
   const { user } = useAuth();
@@ -12,7 +13,8 @@ export default function LogsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<StressLog | null>(null);
-  const [form, setForm] = useState({ mood: "", context: "", memo: "", score: "" });
+  const [form, setForm] = useState({ mood: "", context: "", memo: "" });
+  const editScore = computeStressScore(form.mood);
 
   useEffect(() => {
     if (!user) return;
@@ -47,19 +49,17 @@ export default function LogsScreen() {
       mood: log.mood,
       context: log.context,
       memo: log.memo,
-      score: String(log.score),
     });
   };
 
   const cancelEdit = () => {
     setEditing(null);
-    setForm({ mood: "", context: "", memo: "", score: "" });
+    setForm({ mood: "", context: "", memo: "" });
   };
 
   const saveEdit = async () => {
     if (!editing) return;
-    const scoreValue = Number(form.score);
-    if (!form.mood || !form.context || Number.isNaN(scoreValue)) {
+    if (!form.mood || !form.context) {
       setError("필수 값을 입력하세요.");
       return;
     }
@@ -68,7 +68,7 @@ export default function LogsScreen() {
         mood: form.mood,
         context: form.context,
         memo: form.memo,
-        score: scoreValue,
+        score: computeStressScore(form.mood),
       });
       await updateDailySummaryForDate(db, user.uid, editing.date);
       cancelEdit();
@@ -119,13 +119,10 @@ export default function LogsScreen() {
             onChangeText={(text) => setForm((prev) => ({ ...prev, memo: text }))}
             placeholder="메모"
           />
-          <TextInput
-            style={styles.input}
-            value={form.score}
-            onChangeText={(text) => setForm((prev) => ({ ...prev, score: text }))}
-            placeholder="점수"
-            keyboardType="numeric"
-          />
+          <View style={styles.scoreRow}>
+            <Text style={styles.scoreLabel}>점수(자동)</Text>
+            <Text style={styles.scoreValue}>{form.mood ? editScore : "-"}</Text>
+          </View>
           <View style={styles.editActions}>
             <TouchableOpacity style={styles.primaryButton} onPress={saveEdit}>
               <Text style={styles.primaryButtonText}>저장</Text>
@@ -272,6 +269,19 @@ const styles = StyleSheet.create({
   editActions: {
     flexDirection: "row",
     gap: 8,
+  },
+  scoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  scoreLabel: {
+    fontSize: 12,
+    color: "#777",
+  },
+  scoreValue: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   primaryButton: {
     backgroundColor: "#111",

@@ -20,6 +20,7 @@ import {
   computeDailySummary,
   updateDailySummaryForDate,
 } from "../utils/dailySummary";
+import { computeStressScore } from "../utils/stressScore";
 
 type TrendPoint = {
   date: string;
@@ -56,8 +57,8 @@ export default function Dashboard() {
     mood: "",
     context: "",
     memo: "",
-    score: "",
   });
+  const addScore = computeStressScore(addForm.mood);
   const dailySummaries = useMemo(() => {
     if (!user) return [];
     const dates = buildDateRange(14);
@@ -364,8 +365,7 @@ export default function Dashboard() {
   const addLog = async () => {
     if (!user) return;
     setAddError(null);
-    const scoreValue = Number(addForm.score);
-    if (!addForm.date || !addForm.mood || !addForm.context || Number.isNaN(scoreValue)) {
+    if (!addForm.date || !addForm.mood || !addForm.context) {
       setAddError("필수 값을 입력하세요.");
       return;
     }
@@ -378,7 +378,7 @@ export default function Dashboard() {
         mood: addForm.mood,
         context: addForm.context,
         memo: addForm.memo,
-        score: scoreValue,
+        score: computeStressScore(addForm.mood),
         createdAt: serverTimestamp(),
       });
       await updateDailySummaryForDate(db, user.uid, addForm.date);
@@ -387,7 +387,6 @@ export default function Dashboard() {
         mood: "",
         context: "",
         memo: "",
-        score: "",
       });
       setShowAdd(false);
     } catch (err) {
@@ -458,14 +457,12 @@ export default function Dashboard() {
               />
             </label>
             <label>
-              Score
+              Score (auto)
               <input
                 className="input"
                 type="number"
-                value={addForm.score}
-                onChange={(event) =>
-                  setAddForm((prev) => ({ ...prev, score: event.target.value }))
-                }
+                value={addForm.mood ? String(addScore) : ""}
+                readOnly
               />
             </label>
           </div>
