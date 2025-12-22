@@ -8,8 +8,10 @@ const baseUrl =
   (import.meta.env.VITE_OPENAI_BASE_URL as string | undefined) ??
   "https://api.openai.com/v1";
 const model = (import.meta.env.VITE_OPENAI_MODEL as string | undefined) ?? "gpt-4o-mini";
+const isAiConfigured = Boolean(apiKey);
 
 export type { AiMessage };
+export { isAiConfigured, model as aiModel };
 
 export async function fetchChatCompletion(messages: AiMessage[]) {
   if (!apiKey) {

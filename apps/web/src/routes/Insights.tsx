@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
-import type { DailyInsightSummary } from "../models";
+import type { AiInsight, DailyInsightSummary } from "../models";
+import { isAiConfigured } from "../ai";
 import { buildDateRange, syncDailySummariesForRange } from "../utils/dailySummary";
+import { ensureDailyAiInsight, normalizeAiInsight } from "../utils/aiInsights";
 
 export default function Insights() {
   const { user } = useAuth();
   const [dailySummaries, setDailySummaries] = useState<DailyInsightSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -157,6 +163,46 @@ export default function Insights() {
     return messages.join(" · ");
   }, [avgExpense14, dailySummaries.length, highStressDays.length, spendSpike, topSpendCategory]);
 
+  useEffect(() => {
+    if (!user || !latestSummary) {
+      setAiInsight(null);
+      return;
+    }
+
+    let active = true;
+    const loadAi = async () => {
+      if (!isAiConfigured) {
+        if (active) setAiInsight(null);
+        return;
+      }
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const snap = await getDoc(doc(db, "insights", user.uid, "daily", latestSummary.date));
+        const storedAi = normalizeAiInsight(snap.data()?.ai);
+        if (storedAi) {
+          if (active) setAiInsight(storedAi);
+          return;
+        }
+        const ai = await ensureDailyAiInsight(db, user.uid, latestSummary, {
+          avgExpense14,
+          spendSpike,
+          topCategories: latestSummary.topCategories.map((entry) => entry.category),
+        });
+        if (active) setAiInsight(ai);
+      } catch (err) {
+        console.error("Insights AI insight failed:", err);
+        if (active) setAiError("AI 인사이트를 불러오지 못했습니다.");
+      } finally {
+        if (active) setAiLoading(false);
+      }
+    };
+    loadAi();
+    return () => {
+      active = false;
+    };
+  }, [avgExpense14, latestSummary, spendSpike, user]);
+
   return (
     <AppShell>
       <div className="topbar">
@@ -256,7 +302,31 @@ export default function Insights() {
         </div>
         <div className="card">
           <h3>지출 대신 회복 루틴</h3>
-          <p className="muted">지금은 실제 데이터 기반 추천만 보여줍니다.</p>
+          {!isAiConfigured && (
+            <p className="muted">AI 키가 설정되지 않아 추천을 만들 수 없습니다.</p>
+          )}
+          {aiLoading && <p className="muted">AI 추천을 생성 중입니다...</p>}
+          {aiError && <p className="muted">{aiError}</p>}
+          {aiInsight ? (
+            <>
+              <p className="muted">{aiInsight.summary}</p>
+              <div className="insight-list" style={{ marginTop: 12 }}>
+                {aiInsight.recommendations.map((rec) => (
+                  <div key={`${rec.title}-${rec.duration}`} className="insight-row">
+                    <span>
+                      {rec.title} · {rec.duration}
+                    </span>
+                    <span className="pill">{rec.type}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            !aiLoading &&
+            isAiConfigured && (
+              <p className="muted">추천을 만들 충분한 기록이 없습니다.</p>
+            )
+          )}
         </div>
       </section>
     </AppShell>

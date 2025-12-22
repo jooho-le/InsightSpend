@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -11,7 +12,9 @@ import {
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
-import type { FinanceLog, StressLog } from "../models";
+import type { AiInsight, FinanceLog, StressLog } from "../models";
+import { isAiConfigured } from "../ai";
+import { ensureDailyAiInsight, normalizeAiInsight } from "../utils/aiInsights";
 import {
   buildDateRange,
   computeDailySummary,
@@ -45,6 +48,9 @@ export default function Dashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     mood: "",
@@ -59,6 +65,15 @@ export default function Dashboard() {
       computeDailySummary(user.uid, date, stress14Logs, financeLogs)
     );
   }, [financeLogs, stress14Logs, user]);
+
+  const latestSummary = useMemo(() => {
+    const reversed = [...dailySummaries].reverse();
+    return (
+      reversed.find((summary) => summary.stressCount > 0 || summary.dailyExpense > 0) ||
+      dailySummaries[dailySummaries.length - 1] ||
+      null
+    );
+  }, [dailySummaries]);
 
   useEffect(() => {
     if (!user) return;
@@ -270,10 +285,10 @@ export default function Dashboard() {
 
   const spendSurge = useMemo(() => {
     if (avgExpense14 === 0) return false;
-    const lastSummary = dailySummaries[dailySummaries.length - 1];
+    const lastSummary = latestSummary;
     if (!lastSummary) return false;
     return lastSummary.dailyExpense >= avgExpense14 * 1.5;
-  }, [avgExpense14, dailySummaries]);
+  }, [avgExpense14, latestSummary]);
 
   const highStressDays = useMemo(() => {
     return dailySummaries
@@ -310,6 +325,41 @@ export default function Dashboard() {
         : "최근 14일 지출 기록이 없습니다.";
     return `${avgText} ${spendText}`;
   }, [avgExpense14, dailySummaries.length, weeklyAvg]);
+
+  useEffect(() => {
+    if (!user || !latestSummary) {
+      setAiInsight(null);
+      return;
+    }
+    let active = true;
+    const loadAi = async () => {
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const snap = await getDoc(doc(db, "insights", user.uid, "daily", latestSummary.date));
+        const storedAi = normalizeAiInsight(snap.data()?.ai);
+        if (storedAi) {
+          if (active) setAiInsight(storedAi);
+          return;
+        }
+        const ai = await ensureDailyAiInsight(db, user.uid, latestSummary, {
+          avgExpense14,
+          spendSpike: spendSurge,
+          topCategories: latestSummary.topCategories.map((entry) => entry.category),
+        });
+        if (active) setAiInsight(ai);
+      } catch (err) {
+        console.error("Dashboard AI insight failed:", err);
+        if (active) setAiError("AI 추천을 불러오지 못했습니다.");
+      } finally {
+        if (active) setAiLoading(false);
+      }
+    };
+    loadAi();
+    return () => {
+      active = false;
+    };
+  }, [avgExpense14, latestSummary, spendSurge, user]);
 
   const addLog = async () => {
     if (!user) return;
@@ -524,7 +574,31 @@ export default function Dashboard() {
       <section className="grid two">
         <div className="card">
           <h3>지출 대신 회복 루틴</h3>
-          <p className="muted">지금은 실제 데이터 기반 추천만 보여줍니다.</p>
+          {!isAiConfigured && (
+            <p className="muted">AI 키가 설정되지 않아 추천을 만들 수 없습니다.</p>
+          )}
+          {aiLoading && <p className="muted">AI 추천을 생성 중입니다...</p>}
+          {aiError && <p className="muted">{aiError}</p>}
+          {aiInsight ? (
+            <>
+              <p className="muted">{aiInsight.summary}</p>
+              <div className="insight-list" style={{ marginTop: 12 }}>
+                {aiInsight.recommendations.map((rec) => (
+                  <div key={`${rec.title}-${rec.duration}`} className="insight-row">
+                    <span>
+                      {rec.title} · {rec.duration}
+                    </span>
+                    <span className="pill">{rec.type}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            !aiLoading &&
+            isAiConfigured && (
+              <p className="muted">추천을 만들 충분한 기록이 없습니다.</p>
+            )
+          )}
         </div>
         <div className="card">
           <h3>Recent Logs</h3>
@@ -568,7 +642,10 @@ export default function Dashboard() {
           </div>
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>“지출로 푸는 대신”</div>
-            <div className="muted">실제 추천 로직이 연결되면 여기에서 보여줍니다.</div>
+            <div className="muted">
+              {aiInsight?.pattern ??
+                "AI 추천을 만들 충분한 기록이 없습니다."}
+            </div>
           </div>
         </div>
         <div className="card">

@@ -9,8 +9,10 @@ const extra = Constants.expoConfig?.extra ?? {};
 const apiKey = extra.openAiApiKey as string | undefined;
 const baseUrl = (extra.openAiBaseUrl as string | undefined) ?? "https://api.openai.com/v1";
 const model = (extra.openAiModel as string | undefined) ?? "gpt-4o-mini";
+const isAiConfigured = Boolean(apiKey);
 
 export type { AiMessage };
+export { isAiConfigured, model as aiModel };
 
 export async function fetchChatCompletion(messages: AiMessage[]) {
   if (!apiKey) {
