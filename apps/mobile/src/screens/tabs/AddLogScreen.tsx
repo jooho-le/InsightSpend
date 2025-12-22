@@ -4,6 +4,7 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../../auth";
 import { db } from "../../firebase";
 import { updateDailySummaryForDate } from "../../utils/dailySummary";
+import { computeStressScore } from "../../utils/stressScore";
 
 export default function AddLogScreen() {
   const { user } = useAuth();
@@ -11,18 +12,17 @@ export default function AddLogScreen() {
   const [mood, setMood] = useState("");
   const [context, setContext] = useState("");
   const [memo, setMemo] = useState("");
-  const [score, setScore] = useState("60");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const computedScore = computeStressScore(mood);
 
   const submit = async () => {
     if (!user) return;
     setError(null);
     setSuccess(null);
 
-    const scoreValue = Number(score);
-    if (!date || !mood || !context || Number.isNaN(scoreValue)) {
+    if (!date || !mood || !context) {
       setError("필수 항목을 입력하세요.");
       return;
     }
@@ -35,7 +35,7 @@ export default function AddLogScreen() {
         mood,
         context,
         memo,
-        score: scoreValue,
+        score: computeStressScore(mood),
         createdAt: serverTimestamp(),
       });
       await updateDailySummaryForDate(db, user.uid, date);
@@ -69,13 +69,8 @@ export default function AddLogScreen() {
           onChangeText={setMemo}
         />
         <View style={styles.scoreRow}>
-          <Text style={styles.label}>점수</Text>
-          <TextInput
-            value={score}
-            onChangeText={setScore}
-            style={[styles.input, styles.scoreInput]}
-            keyboardType="numeric"
-          />
+          <Text style={styles.label}>점수(자동)</Text>
+          <Text style={styles.scoreValue}>{mood ? computedScore : "-"}</Text>
         </View>
         {error && <Text style={styles.error}>{error}</Text>}
         {success && <Text style={styles.success}>{success}</Text>}
@@ -124,9 +119,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  scoreInput: {
-    width: 80,
-    textAlign: "center",
+  scoreValue: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   error: {
     fontSize: 12,
