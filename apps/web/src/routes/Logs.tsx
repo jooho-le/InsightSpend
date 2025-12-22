@@ -19,6 +19,17 @@ import { computeStressScore } from "../utils/stressScore";
 
 export default function Logs() {
   const { user } = useAuth();
+  const moodOptions = [
+    "행복",
+    "기쁨",
+    "평온",
+    "보통",
+    "불안",
+    "짜증",
+    "슬픔",
+    "피곤",
+    "스트레스",
+  ];
   const [logs, setLogs] = useState<StressLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,13 +205,21 @@ export default function Logs() {
           </label>
           <label>
             Mood
-            <input
-              className="input"
-              value={createForm.mood}
-              onChange={(event) =>
-                setCreateForm((prev) => ({ ...prev, mood: event.target.value }))
-              }
-            />
+            <div className="toggle-group">
+              {moodOptions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={`toggle-pill${createForm.mood === option ? " active" : ""}`}
+                  onClick={() =>
+                    setCreateForm((prev) => ({ ...prev, mood: option }))
+                  }
+                  aria-pressed={createForm.mood === option}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </label>
           <label>
             Context
@@ -245,13 +264,21 @@ export default function Logs() {
           <div className="form-grid">
             <label>
               Mood
-              <input
-                className="input"
-                value={form.mood}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, mood: event.target.value }))
-                }
-              />
+              <div className="toggle-group">
+                {moodOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`toggle-pill${form.mood === option ? " active" : ""}`}
+                    onClick={() =>
+                      setForm((prev) => ({ ...prev, mood: option }))
+                    }
+                    aria-pressed={form.mood === option}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             </label>
             <label>
               Context

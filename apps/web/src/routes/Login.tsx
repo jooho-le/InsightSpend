@@ -7,8 +7,8 @@ export default function Login() {
     <div className="login">
       <div className="login-left">
         <div className="brand">InsightSpend</div>
-        <h1 style={{ fontSize: 42, margin: 0 }}>
-          개인 맞춤 스트레스 리듬을 기록하고,
+        <h1 style={{ fontSize: 40, margin: 0 }}>
+          개인맞춤 스트레스 리듬을 기록하고,
           <br />
           성장 여정을 설계하세요.
         </h1>
