@@ -7,21 +7,15 @@ export default function Login() {
     <div className="login">
       <div className="login-left">
         <div className="brand">InsightSpend</div>
-        <h1 style={{ fontSize: 40, margin: 0 }}>
-          개인맞춤 스트레스 리듬을 기록하고,
-          <br />
-          성장 여정을 설계하세요.
-        </h1>
-        <p className="muted">
-          업무 맥락과 감정 패턴을 함께 기록해 나만의 회복 포인트를 찾습니다.
-        </p>
+        <h1 style={{ fontSize: 40, margin: 0 }}>스트레스와 지출을 연결해 회복 루틴을 설계해요.</h1>
+        <p className="muted">오늘의 감정을 적으면 소비 패턴과 함께 분석해드려요.</p>
       </div>
       <div className="login-right">
         <div className="login-card">
           <h2 style={{ marginTop: 0 }}>시작하기</h2>
-          <p className="muted">Google 계정으로 로그인해 빠르게 시작하세요.</p>
+          <p className="muted">구글 계정으로 10초 만에 시작할 수 있어요.</p>
           <button className="primary-button" onClick={() => signInWithGoogle()}>
-            Google로 로그인
+            Google로 계속하기
           </button>
         </div>
       </div>

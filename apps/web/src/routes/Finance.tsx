@@ -17,10 +17,12 @@ import { updateDailySummaryForDate } from "../utils/dailySummary";
 
 export default function Finance() {
   const { user } = useAuth();
+  const categoryOptions = ["식비", "카페", "교통", "쇼핑", "취미", "건강", "교육", "기타"];
   const [logs, setLogs] = useState<FinanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     category: "",
@@ -57,7 +59,7 @@ export default function Finance() {
       },
       (err) => {
         console.error("Finance logs snapshot failed:", err);
-        setError("지출 데이터를 불러오지 못했습니다.");
+        setError("지출 기록을 불러오지 못했어요.");
         setLoading(false);
       }
     );
@@ -70,7 +72,7 @@ export default function Finance() {
     setError(null);
     const amountValue = Number(form.amount);
     if (!form.date || !form.category || Number.isNaN(amountValue)) {
-      setError("필수 값을 입력하세요.");
+      setError("필수 항목을 입력해주세요.");
       return;
     }
     setSaving(true);
@@ -90,17 +92,18 @@ export default function Finance() {
         amount: "",
         memo: "",
       });
+      setShowCategoryPicker(false);
     } catch (err) {
-      setError("지출 추가에 실패했습니다.");
+      setError("지출 기록 저장에 실패했어요.");
     } finally {
       setSaving(false);
     }
   };
 
   const removeFinance = async (log: FinanceLog) => {
-    if (!confirm("이 지출을 삭제할까요?")) return;
+    if (!confirm("이 지출 기록을 삭제할까요?")) return;
     if (!canDelete(log)) {
-      setError("삭제 불가: 현재 로그인 uid와 지출 uid가 다릅니다. 로그인 계정을 확인하거나 문서 uid를 수정하세요.");
+      setError("삭제 권한이 없어요. 로그인 상태와 UID를 확인해주세요.");
       return;
     }
     try {
@@ -111,8 +114,8 @@ export default function Finance() {
         await updateDailySummaryForDate(db, user.uid, log.date);
       }
     } catch (err) {
-      console.error("지출 삭제 실패:", err);
-      setError("지출 삭제에 실패했습니다.");
+      console.error("Failed to delete expense:", err);
+      setError("지출 기록 삭제에 실패했어요.");
     }
   };
 
@@ -124,7 +127,7 @@ export default function Finance() {
   const categoryTotals = useMemo(() => {
     const totals = new Map<string, number>();
     logs.forEach((log) => {
-      const key = log.category.trim() || "기타";
+      const key = log.category.trim() || "Other";
       totals.set(key, (totals.get(key) ?? 0) + log.amount);
     });
     return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
@@ -134,120 +137,170 @@ export default function Finance() {
     <AppShell>
       <div className="topbar">
         <div>
-          <h1>Finance</h1>
-          <div className="muted">이번 달 지출 흐름을 확인하세요.</div>
+          <h1>지출 기록</h1>
+          <div className="muted">이번 달 지출 흐름을 한눈에 확인해요.</div>
         </div>
       </div>
 
       {loading && <div className="card">불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
-      {user && (
-        <div className="muted" style={{ marginTop: 8 }}>
-          현재 로그인 uid: {user.uid}
-        </div>
-      )}
 
-      <section className="card">
-        <h3>지출 추가</h3>
-        <div className="form-grid">
-          <label>
-            Date
-            <input
-              className="input"
-              type="date"
-              value={form.date}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, date: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Category
-            <input
-              className="input"
-              value={form.category}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, category: event.target.value }))
-              }
-              placeholder="예: 식비, 교통, 취미"
-            />
-          </label>
-          <label>
-            Amount
-            <input
-              className="input"
-              type="number"
-              value={form.amount}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, amount: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Memo
-            <input
-              className="input"
-              value={form.memo}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, memo: event.target.value }))
-              }
-              placeholder="짧게 메모"
-            />
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="primary-button" onClick={addFinance} disabled={saving}>
-            {saving ? "저장 중..." : "저장"}
-          </button>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <div className="card">
-          <h3>월간 총지출</h3>
-          <div className="stat">{monthTotal.toLocaleString()}원</div>
-          <div className="muted">이번 달 누적 합계</div>
-        </div>
-        <div className="card">
-          <h3>카테고리별 합계</h3>
-          <div className="insight-list">
-            {categoryTotals.length === 0 && (
-              <div className="muted">지출 기록이 없습니다.</div>
+      <section className="split-layout">
+        <div className="split-panel">
+          <h3 className="panel-title">이번 달 요약</h3>
+          <p className="panel-subtitle">지출 패턴을 빠르게 확인해요.</p>
+          <div className="card-grid" style={{ marginBottom: 16 }}>
+            <div className="card">
+              <h4 style={{ marginTop: 0 }}>이번 달 합계</h4>
+              <div className="stat">₩{monthTotal.toLocaleString()}</div>
+              <div className="muted">이번 달 누적 지출</div>
+            </div>
+            <div className="card">
+              <h4 style={{ marginTop: 0 }}>카테고리 합계</h4>
+              <div className="insight-list">
+                {categoryTotals.length === 0 && (
+                  <div className="empty-state">오늘 한 줄만 적어볼래요?</div>
+                )}
+                {categoryTotals.map(([category, total]) => (
+                  <div key={category} className="insight-row">
+                    <span>{category}</span>
+                    <span className="pill">₩{total.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <h4 className="panel-title" style={{ fontSize: 16 }}>
+            지출 기록
+          </h4>
+          <div className="log-list">
+            {logs.length === 0 && (
+              <div className="empty-state">오늘의 지출을 먼저 적어볼까요?</div>
             )}
-            {categoryTotals.map(([category, total]) => (
-              <div key={category} className="insight-row">
-                <span>{category}</span>
-                <span className="pill">{total.toLocaleString()}원</span>
+            {logs.map((log) => (
+              <div key={log.id} className="entry-card">
+                <div>
+                  <div className="entry-header">
+                    <span className="pill">{log.date}</span>
+                    <span className="entry-title">{log.category}</span>
+                    <span className="pill">₩{log.amount.toLocaleString()}</span>
+                  </div>
+                  <div className="entry-meta">
+                    {!!log.memo && <span>{log.memo}</span>}
+                  </div>
+                </div>
+                <div className="entry-actions">
+                  <button
+                    className="danger-button"
+                    onClick={() => removeFinance(log)}
+                    disabled={!canDelete(log)}
+                  >
+                    삭제
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </div>
-      </section>
 
-      <section className="card" style={{ marginTop: 24 }}>
-        <h3>지출 리스트</h3>
-        <div className="log-list">
-          {logs.length === 0 && <div className="muted">이번 달 지출이 없습니다.</div>}
-          {logs.map((log) => (
-            <div key={log.id} className="log-item">
-              <div className="pill">{log.date.slice(5)}</div>
-              <div>
-                <div style={{ fontWeight: 600 }}>{log.category}</div>
-                {!!log.memo && <div className="muted">{log.memo}</div>}
-                <div className="muted">uid: {log.uid}</div>
-              </div>
-              <div className="pill">{log.amount.toLocaleString()}원</div>
-              <div className="log-actions">
+        <div className="split-panel">
+          <h3 className="panel-title">지출 추가</h3>
+          <p className="panel-subtitle">카테고리를 선택하고 금액을 입력하세요.</p>
+          <div className="form-grid">
+            <label>
+              날짜
+              <input
+                className="input"
+                type="date"
+                value={form.date}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, date: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              카테고리 빠른 선택
+              <div className="mood-selector">
                 <button
-                  className="danger-button"
-                  onClick={() => removeFinance(log)}
-                  disabled={!canDelete(log)}
+                  type="button"
+                  className={`mood-trigger${showCategoryPicker ? " active" : ""}`}
+                  onClick={() => setShowCategoryPicker((prev) => !prev)}
                 >
-                  Delete
+                  <div className="mood-trigger-text">
+                    {form.category ? (
+                      <>
+                        <span className="muted">선택됨</span>
+                        <span>{form.category}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="muted">카테고리 선택</span>
+                        <span>열기</span>
+                      </>
+                    )}
+                  </div>
+                  <span className="mood-trigger-icon">⌄</span>
                 </button>
+                {showCategoryPicker && (
+                  <div className="toggle-cards">
+                    {categoryOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`toggle-card${
+                          form.category === option ? " active" : ""
+                        }`}
+                        onClick={() => {
+                          setForm((prev) => ({ ...prev, category: option }));
+                          setShowCategoryPicker(false);
+                        }}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            </label>
+            <label>
+              카테고리 직접 입력
+              <input
+                className="input"
+                value={form.category}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, category: event.target.value }))
+                }
+                placeholder="예: 배달, 쇼핑, 카페"
+              />
+            </label>
+            <label>
+              금액
+              <input
+                className="input"
+                type="number"
+                value={form.amount}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, amount: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              메모
+              <input
+                className="input"
+                value={form.memo}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, memo: event.target.value }))
+                }
+                placeholder="짧게 남기기"
+              />
+            </label>
+          </div>
+          <div className="button-row">
+            <button className="primary-button" onClick={addFinance} disabled={saving}>
+              {saving ? "저장 중..." : "저장"}
+            </button>
+          </div>
         </div>
       </section>
     </AppShell>
