@@ -1,26 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../auth";
 import { db } from "../firebase";
 import type { AiInsight, FinanceLog, StressLog } from "../models";
 import { isAiConfigured } from "../ai";
 import { ensureDailyAiInsight, normalizeAiInsight } from "../utils/aiInsights";
-import {
-  buildDateRange,
-  computeDailySummary,
-  updateDailySummaryForDate,
-} from "../utils/dailySummary";
-import { computeStressScore } from "../utils/stressScore";
+import { buildDateRange, computeDailySummary } from "../utils/dailySummary";
 
 type TrendPoint = {
   date: string;
@@ -46,19 +32,9 @@ export default function Dashboard() {
     jobType: "",
   });
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
   const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [addForm, setAddForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    mood: "",
-    context: "",
-    memo: "",
-  });
-  const addScore = computeStressScore(addForm.mood);
   const dailySummaries = useMemo(() => {
     if (!user) return [];
     const dates = buildDateRange(14);
@@ -132,7 +108,7 @@ export default function Dashboard() {
       },
       (err) => {
         console.error("Dashboard week logs snapshot failed:", err);
-        setError("최근 7일 데이터를 불러오지 못했습니다.");
+        setError("최근 7일 기록을 불러오지 못했어요.");
         setLoading(false);
       }
     );
@@ -157,7 +133,7 @@ export default function Dashboard() {
       },
       (err) => {
         console.error("Dashboard 14-day logs snapshot failed:", err);
-        setError("최근 14일 데이터를 불러오지 못했습니다.");
+        setError("최근 14일 기록을 불러오지 못했어요.");
       }
     );
 
@@ -181,7 +157,7 @@ export default function Dashboard() {
       },
       (err) => {
         console.error("Dashboard finance logs snapshot failed:", err);
-        setError("지출 데이터를 불러오지 못했습니다.");
+        setError("지출 데이터를 불러오지 못했어요.");
       }
     );
 
@@ -192,12 +168,12 @@ export default function Dashboard() {
         if (snapshot.exists()) {
           const data = snapshot.data() as { displayName?: string; jobType?: string };
           setProfile({
-            displayName: data.displayName ?? user.displayName ?? "Anonymous",
+            displayName: data.displayName ?? user.displayName ?? "익명",
             jobType: data.jobType ?? "",
           });
         } else {
           setProfile({
-            displayName: user.displayName ?? "Anonymous",
+            displayName: user.displayName ?? "익명",
             jobType: "",
           });
         }
@@ -205,7 +181,7 @@ export default function Dashboard() {
       },
       () => {
         setProfile({
-          displayName: user.displayName ?? "Anonymous",
+          displayName: user.displayName ?? "익명",
           jobType: "",
         });
       }
@@ -224,17 +200,6 @@ export default function Dashboard() {
     if (scores.length === 0) return 0;
     const sum = scores.reduce((acc, cur) => acc + cur, 0);
     return Math.round(sum / scores.length);
-  }, [trend]);
-
-  const { maxScore, minScore } = useMemo(() => {
-    const scores = trend.map((item) => item.score).filter((score) => score > 0);
-    if (scores.length === 0) {
-      return { maxScore: 0, minScore: 0 };
-    }
-    return {
-      maxScore: Math.max(...scores),
-      minScore: Math.min(...scores),
-    };
   }, [trend]);
 
   const topMoods = useMemo(() => {
@@ -261,7 +226,7 @@ export default function Dashboard() {
   }, [weekLogs]);
 
   const latestLogDateLabel = useMemo(() => {
-    if (!latestLogDate) return "최근 로그 없음";
+    if (!latestLogDate) return "최근 기록 없음";
     const [year, month, day] = latestLogDate.split("-");
     return `${month}.${day}`;
   }, [latestLogDate]);
@@ -270,7 +235,7 @@ export default function Dashboard() {
     const totals = new Map<string, number>();
     dailySummaries.forEach((summary) => {
       summary.topCategories.forEach((entry) => {
-        const key = entry.category.trim() || "기타";
+        const key = entry.category.trim() || "Other";
         totals.set(key, (totals.get(key) ?? 0) + entry.amount);
       });
     });
@@ -291,6 +256,27 @@ export default function Dashboard() {
     return lastSummary.dailyExpense >= avgExpense14 * 1.5;
   }, [avgExpense14, latestSummary]);
 
+  const spendSurgeLabel = useMemo(() => {
+    if (!latestSummary) return "데이터 필요";
+    if (avgExpense14 === 0 && latestSummary.dailyExpense === 0) return "데이터 필요";
+    return spendSurge ? "감지됨" : "안정적";
+  }, [avgExpense14, latestSummary, spendSurge]);
+
+  const summaryRecommendation = useMemo(() => {
+    return aiInsight?.recommendations[0] ?? null;
+  }, [aiInsight]);
+
+  const summaryReason = useMemo(() => {
+    if (summaryRecommendation?.reason) return summaryRecommendation.reason;
+    const stressHigh = (latestSummary?.stressScoreMax ?? 0) >= 70;
+    if (stressHigh && spendSurge) {
+      return `스트레스↑ + 지출↑(${financeTopCategory})라서…`;
+    }
+    if (stressHigh) return "스트레스가 높아서 빠른 리셋이 필요해요.";
+    if (spendSurge) return `최근 평균보다 지출이 늘었어요 (${financeTopCategory}).`;
+    return "루틴 하나로 리듬을 유지해볼까요?";
+  }, [financeTopCategory, latestSummary, spendSurge, summaryRecommendation]);
+
   const highStressDays = useMemo(() => {
     return dailySummaries
       .filter((summary) => summary.stressScoreMax >= 70)
@@ -300,30 +286,30 @@ export default function Dashboard() {
 
   const insightText = useMemo(() => {
     if (dailySummaries.length === 0) {
-      return "최근 14일 기준으로 정서와 지출 데이터를 더 쌓아주세요.";
+      return "오늘 한 줄만 적어볼래요?";
     }
     const stressText =
       highStressDays.length > 0
-        ? `고스트레스 기록이 ${highStressDays.length}일 있어요.`
-        : "고스트레스 기록은 아직 없습니다.";
+        ? `고스트레스 날: ${highStressDays.length}일`
+        : "고스트레스 날은 아직 없어요.";
     const spendText = spendSurge
-      ? "최근 2주 지출이 이전 대비 크게 늘었어요."
-      : "최근 2주 지출은 평소 범위에 있어요.";
-    const categoryText = `최근 2주 가장 큰 지출 카테고리는 ${financeTopCategory}입니다.`;
-    return `${stressText} ${spendText} ${categoryText}`;
+      ? "최근 2주 대비 지출이 늘었어요."
+      : "최근 2주 지출은 안정적이에요.";
+    const categoryText = `가장 많이 쓴 카테고리: ${financeTopCategory}`;
+    return `${stressText} · ${spendText} · ${categoryText}`;
   }, [dailySummaries.length, financeTopCategory, highStressDays.length, spendSurge]);
 
   const insightSummary = useMemo(() => {
     if (dailySummaries.length === 0) {
-      return "최근 14일 기록이 없어 기본 인사이트를 제안합니다.";
+      return "아직 기록이 많지 않아요.";
     }
     const avgText = weeklyAvg
-      ? `지난 7일 평균 스트레스 점수는 ${weeklyAvg}점입니다.`
-      : "지난 7일 스트레스 평균이 아직 없습니다.";
+      ? `최근 7일 평균 스트레스: ${weeklyAvg}`
+      : "최근 7일 평균 스트레스가 없어요.";
     const spendText =
       avgExpense14 > 0
-        ? `최근 14일 평균 지출은 ${avgExpense14.toLocaleString()}원입니다.`
-        : "최근 14일 지출 기록이 없습니다.";
+        ? `최근 14일 평균 지출: ₩${avgExpense14.toLocaleString()}`
+        : "최근 14일 지출 데이터가 없어요.";
     return `${avgText} ${spendText}`;
   }, [avgExpense14, dailySummaries.length, weeklyAvg]);
 
@@ -351,7 +337,7 @@ export default function Dashboard() {
         if (active) setAiInsight(ai);
       } catch (err) {
         console.error("Dashboard AI insight failed:", err);
-        if (active) setAiError("AI 추천을 불러오지 못했습니다.");
+        if (active) setAiError("AI 추천을 불러오지 못했어요.");
       } finally {
         if (active) setAiLoading(false);
       }
@@ -362,302 +348,125 @@ export default function Dashboard() {
     };
   }, [avgExpense14, latestSummary, spendSurge, user]);
 
-  const addLog = async () => {
-    if (!user) return;
-    setAddError(null);
-    if (!addForm.date || !addForm.mood || !addForm.context) {
-      setAddError("필수 값을 입력하세요.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await addDoc(collection(db, "stressLogs"), {
-        uid: user.uid,
-        date: addForm.date,
-        mood: addForm.mood,
-        context: addForm.context,
-        memo: addForm.memo,
-        score: computeStressScore(addForm.mood),
-        createdAt: serverTimestamp(),
-      });
-      await updateDailySummaryForDate(db, user.uid, addForm.date);
-      setAddForm({
-        date: new Date().toISOString().slice(0, 10),
-        mood: "",
-        context: "",
-        memo: "",
-      });
-      setShowAdd(false);
-    } catch (err) {
-      setAddError("로그 추가에 실패했습니다.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <AppShell>
       <div className="topbar">
         <div>
-          <h1>Dashboard</h1>
-          <div className="muted">이번 주 스트레스 흐름과 회복 지표</div>
+          <h1>대시보드</h1>
+          <div className="muted">이번 주 스트레스 흐름과 소비 리듬을 요약했어요</div>
         </div>
-        <button className="ghost-button" onClick={() => setShowAdd((prev) => !prev)}>
-          + Add log
-        </button>
       </div>
 
       {loading && <div className="card">데이터를 불러오는 중...</div>}
       {error && <div className="card">{error}</div>}
 
-      {showAdd && (
-        <section className="card">
-          <h3>최근 기록 추가</h3>
-          <div className="form-grid">
-            <label>
-              Date
-              <input
-                className="input"
-                type="date"
-                value={addForm.date}
-                onChange={(event) =>
-                  setAddForm((prev) => ({ ...prev, date: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Mood
-              <input
-                className="input"
-                value={addForm.mood}
-                onChange={(event) =>
-                  setAddForm((prev) => ({ ...prev, mood: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Context
-              <input
-                className="input"
-                value={addForm.context}
-                onChange={(event) =>
-                  setAddForm((prev) => ({ ...prev, context: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Memo
-              <input
-                className="input"
-                value={addForm.memo}
-                onChange={(event) =>
-                  setAddForm((prev) => ({ ...prev, memo: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Score (auto)
-              <input
-                className="input"
-                type="number"
-                value={addForm.mood ? String(addScore) : ""}
-                readOnly
-              />
-            </label>
-          </div>
-          {addError && <div className="muted">{addError}</div>}
-          <div className="button-row">
-            <button className="primary-button" onClick={addLog} disabled={saving}>
-              {saving ? "저장 중..." : "저장"}
-            </button>
-            <button className="secondary-button" onClick={() => setShowAdd(false)}>
-              닫기
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section className="hero">
-        <div>
-          <h2>이번 주 리듬을 빠르게 정리하세요.</h2>
-          <p>
-            {insightSummary}
-          </p>
-          <div className="muted" style={{ marginTop: 12 }}>
-            최근 로그: {latestLogDateLabel} · 기록 수: {weekLogs.length.toLocaleString()}건
-          </div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            프로필: {profile.displayName || "-"} · 직종: {profile.jobType || "-"} ·
-            실시간 동기화 중
-          </div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            마지막 동기화: {lastSyncedAt ?? "-"}
-          </div>
-        </div>
-        <div className="hero-metric">
-          <div className="muted">Recovery index</div>
-          <div className="stat">{recoveryIndex ?? "-"}</div>
-          <div className="muted">최근 7일 기준</div>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <div className="card">
-          <h3>Weekly Avg</h3>
+      <section className="summary-grid">
+        <div className="summary-card">
+          <div className="muted">스트레스 평균</div>
           <div className="stat">{weekLogs.length === 0 ? "-" : weeklyAvg || "-"}</div>
+          <div className="muted">최근 7일</div>
+        </div>
+        <div className="summary-card">
+          <div className="muted">지출 급증 여부</div>
+          <div className="stat">{spendSurgeLabel}</div>
           <div className="muted">
-            {weekLogs.length === 0 ? "최근 기록이 없습니다." : "평균 스트레스 점수"}
+            {avgExpense14 > 0
+              ? `최근 14일 평균 ₩${avgExpense14.toLocaleString()}`
+              : "데이터가 더 필요해요."}
           </div>
         </div>
-        <div className="card">
-          <h3>Max / Min</h3>
-          <div className="stat">
-            {weekLogs.length === 0 ? "-" : maxScore || "-"} /{" "}
-            {weekLogs.length === 0 ? "-" : minScore || "-"}
-          </div>
+        <div className="summary-card">
           <div className="muted">
-            {weekLogs.length === 0 ? "최근 기록이 없습니다." : "이번 주 최고/최저 점수"}
+            AI가 추천하는 오늘의 스트레스 감소 및 지출절약 루틴
           </div>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <div className="card">
-          <h3>7-day Mood Trend</h3>
-          {weekLogs.length === 0 ? (
-            <div className="muted">최근 7일 기록이 없습니다.</div>
-          ) : (
-            <>
-              <div className="bars">
-                {trend.map((point, index) => (
-                  <div
-                    key={`${point.date || "day"}-${index}`}
-                    className="bar"
-                    style={{ height: `${Math.max(point.score, 5)}%` }}
-                    title={`${point.date}: ${point.score}`}
-                  />
-                ))}
-              </div>
-              <div className="trend-labels">
-                {trend.map((point, index) => (
-                  <span key={`${point.date || "day"}-${index}`}>{point.date.slice(5)}</span>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="card">
-          <h3>Mood Top3</h3>
-          <div className="insight-list">
-            {topMoods.length === 0 && <div className="muted">기록된 감정이 없습니다.</div>}
-            {topMoods.map(([mood, count]) => (
-              <div key={mood} className="insight-row">
-                <span>{mood}</span>
-                <span className="pill">{count}회</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <div className="card">
-          <h3>지출 대신 회복 루틴</h3>
           {!isAiConfigured && (
-            <p className="muted">AI 키가 설정되지 않아 추천을 만들 수 없습니다.</p>
-          )}
-          {aiLoading && <p className="muted">AI 추천을 생성 중입니다...</p>}
-          {aiError && <p className="muted">{aiError}</p>}
-          {aiInsight ? (
             <>
-              <p className="muted">{aiInsight.summary}</p>
-              <div className="insight-list" style={{ marginTop: 12 }}>
-                {aiInsight.recommendations.map((rec) => (
-                  <div key={`${rec.title}-${rec.duration}`} className="insight-row">
-                    <span>
-                      {rec.title} · {rec.duration}
-                    </span>
-                    <span className="pill">{rec.type}</span>
-                  </div>
-                ))}
-              </div>
+              <div className="stat">AI 연결이 필요해요</div>
+              <div className="muted">OpenAI 키를 설정하면 추천이 생성돼요.</div>
             </>
-          ) : (
-            !aiLoading &&
-            isAiConfigured && (
-              <p className="muted">추천을 만들 충분한 기록이 없습니다.</p>
-            )
           )}
+          {isAiConfigured && aiLoading && (
+            <>
+              <div className="stat">AI 추천 생성 중…</div>
+              <div className="muted">오늘의 패턴을 정리하고 있어요.</div>
+            </>
+          )}
+          {isAiConfigured && !aiLoading && aiError && (
+            <>
+              <div className="stat">AI 추천을 불러오지 못했어요</div>
+              <div className="muted">{aiError}</div>
+            </>
+          )}
+          {isAiConfigured && !aiLoading && !aiError && summaryRecommendation && (
+            <>
+              <div className="stat">{summaryRecommendation.title}</div>
+              <div className="muted">{summaryRecommendation.duration}</div>
+              <div className="reason">{summaryReason}</div>
+            </>
+          )}
+          {isAiConfigured &&
+            !aiLoading &&
+            !aiError &&
+            !summaryRecommendation && (
+              <>
+                <div className="stat">오늘 한 줄만 적어볼래요?</div>
+                <div className="muted">기록이 쌓이면 추천이 생겨요.</div>
+              </>
+            )}
         </div>
-        <div className="card">
-          <h3>Recent Logs</h3>
-          <div className="log-list">
+      </section>
+
+      <div className="split-layout">
+        <section className="split-panel">
+          <h3 className="panel-title">최근 기록</h3>
+          <p className="panel-subtitle">{insightText}</p>
+          <div className="card-grid">
             {recent.length === 0 && (
-              <div className="muted">최근 기록이 없습니다.</div>
+              <div className="empty-state">오늘 한 줄만 적어볼래요?</div>
             )}
             {recent.map((log) => (
-              <div key={log.id} className="log-item">
+              <div key={log.id} className="select-card">
                 <div className="pill">{log.date.slice(5)}</div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{log.mood}</div>
-                  <div className="muted">{log.context}</div>
-                </div>
-                <div className="pill">{log.score}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <div className="card">
-          <h3>정서-지출 인사이트 카드</h3>
-          <p className="muted">{insightText}</p>
-          <div className="insight-list" style={{ marginTop: 12 }}>
-            <div className="insight-row">
-              <span>고스트레스 기준</span>
-              <span className="pill">score ≥ 70</span>
-            </div>
-            <div className="insight-row">
-              <span>지출 급증</span>
-              <span className="pill">
-                {avgExpense14 === 0 ? "기록 없음" : spendSurge ? "감지됨" : "안정적"}
-              </span>
-            </div>
-            <div className="insight-row">
-              <span>Top 카테고리</span>
-              <span className="pill">{financeTopCategory}</span>
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <h3>고스트레스 TOP3일 지출 내역</h3>
-          {highStressDays.length === 0 && (
-            <div className="muted">최근 14일에 고스트레스 기록이 없습니다.</div>
-          )}
-          <div className="log-list">
-            {highStressDays.map((summary) => (
-              <div key={summary.date} className="log-item">
-                <div className="pill">{summary.date.slice(5)}</div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>
-                    {summary.topCategories[0]?.category ?? "지출 없음"}
-                  </div>
-                  <div className="muted">
-                    {summary.dailyExpense
-                      ? `${summary.dailyExpense.toLocaleString()}원`
-                      : "해당 날짜 지출이 없습니다."}
-                  </div>
-                </div>
-                <div className="pill">
-                  {summary.dailyExpense ? summary.dailyExpense.toLocaleString() : 0}원
+                <h4 style={{ marginTop: 10 }}>{log.mood}</h4>
+                <div className="muted">{log.context}</div>
+                <div style={{ marginTop: 10 }}>
+                  <span className="pill">{log.score}</span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
+        <section className="split-panel">
+          <h3 className="panel-title">요약 스냅샷</h3>
+          <p className="panel-subtitle">
+            프로필: {profile.displayName || "-"} · 역할: {profile.jobType || "-"} ·
+            마지막 동기화: {lastSyncedAt ?? "-"}
+          </p>
+          <div className="card-grid">
+            <div className="select-card">
+              <div className="muted">고스트레스 날</div>
+              <div className="stat" style={{ marginTop: 6 }}>
+                {highStressDays.length}일
+              </div>
+              <div className="muted">최근 14일 기준</div>
+            </div>
+            <div className="select-card">
+              <div className="muted">Top 카테고리</div>
+              <div className="stat" style={{ marginTop: 6 }}>
+                {financeTopCategory}
+              </div>
+              <div className="muted">최근 14일 합산</div>
+            </div>
+            <div className="select-card">
+              <div className="muted">회복 지수</div>
+              <div className="stat" style={{ marginTop: 6 }}>
+                {recoveryIndex ?? "-"}
+              </div>
+              <div className="muted">스트레스 평균 기준</div>
+            </div>
+          </div>
+        </section>
+      </div>
     </AppShell>
   );
 }

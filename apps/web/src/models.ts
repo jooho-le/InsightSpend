@@ -20,7 +20,7 @@ export type FinanceLog = {
 export type AiRecommendation = {
   title: string;
   duration: string;
-  type: "즉시" | "상황형" | "대체" | "회복";
+  type: "Immediate" | "Situational" | "Alternative" | "Recovery";
   steps: string[];
   reason: string;
 };

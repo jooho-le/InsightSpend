@@ -82,7 +82,7 @@ export const computeDailySummary = (
   const dailyExpense = dayFinance.reduce((acc, log) => acc + (log.amount || 0), 0);
   const categoryTotals = new Map<string, number>();
   dayFinance.forEach((log) => {
-    const key = log.category.trim() || "기타";
+    const key = log.category.trim() || "Other";
     categoryTotals.set(key, (categoryTotals.get(key) ?? 0) + log.amount);
   });
   const topCategories = Array.from(categoryTotals.entries())

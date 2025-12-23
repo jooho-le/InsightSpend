@@ -16,13 +16,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             Stress Logs
           </NavLink>
           <NavLink to="/finance" className={({ isActive }) => (isActive ? "active" : "")}>
-            Finance
+            Spending
           </NavLink>
           <NavLink to="/chat" className={({ isActive }) => (isActive ? "active" : "")}>
-            Empathy Chat
+            Empathy Coach
           </NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
-            Settings
+            Profile Settings
           </NavLink>
         </nav>
         <div className="sidebar-card">
