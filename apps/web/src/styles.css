@@ -846,6 +846,131 @@ details.fold > .grid {
   justify-content: center;
 }
 
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(30, 30, 30, 0.55);
+  font-weight: 700;
+}
+
+.login-title {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.login-description {
+  font-size: 15px;
+  line-height: 1.6;
+  color: rgba(30, 30, 30, 0.7);
+  max-width: 520px;
+}
+
+.intro-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.intro-stat {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.05);
+}
+
+.intro-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.intro-stat-label {
+  font-size: 12px;
+  color: rgba(30, 30, 30, 0.6);
+}
+
+.intro-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.intro-heading {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.intro-subtitle {
+  margin: 0;
+  color: rgba(30, 30, 30, 0.7);
+}
+
+.intro-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.intro-card {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.06);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intro-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.intro-card p {
+  margin: 0;
+  color: rgba(30, 30, 30, 0.65);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.intro-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  color: rgba(30, 30, 30, 0.7);
+  font-size: 13px;
+}
+
+.intro-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.intro-list li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.5);
+  display: inline-block;
+}
+
 .login-card {
   background: var(--surface);
   padding: 32px;
