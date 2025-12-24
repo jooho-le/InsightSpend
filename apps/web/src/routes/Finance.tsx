@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import AppShell from "../components/AppShell";
@@ -22,6 +23,7 @@ export default function Finance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<FinanceLog | null>(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -29,7 +31,13 @@ export default function Finance() {
     amount: "",
     memo: "",
   });
+  const [editForm, setEditForm] = useState({
+    category: "",
+    amount: "",
+    memo: "",
+  });
   const canDelete = (log: FinanceLog) => !!user && log.uid === user.uid;
+  const selectedCategory = editing ? editForm.category : form.category;
 
   useEffect(() => {
     if (!user) return;
@@ -66,6 +74,45 @@ export default function Finance() {
 
     return () => unsubscribe();
   }, [user]);
+
+  const startEdit = (log: FinanceLog) => {
+    setEditing(log);
+    setShowCategoryPicker(false);
+    setEditForm({
+      category: log.category,
+      amount: String(log.amount),
+      memo: log.memo,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setShowCategoryPicker(false);
+    setEditForm({ category: "", amount: "", memo: "" });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setError(null);
+    const amountValue = Number(editForm.amount);
+    if (!editForm.category || Number.isNaN(amountValue)) {
+      setError("필수 항목을 입력해주세요.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "financeLogs", editing.id), {
+        category: editForm.category,
+        amount: amountValue,
+        memo: editForm.memo,
+      });
+      if (user) {
+        await updateDailySummaryForDate(db, user.uid, editing.date);
+      }
+      cancelEdit();
+    } catch (err) {
+      setError("지출 기록 수정에 실패했어요.");
+    }
+  };
 
   const addFinance = async () => {
     if (!user) return;
@@ -178,7 +225,18 @@ export default function Finance() {
               <div className="empty-state">오늘의 지출을 먼저 적어볼까요?</div>
             )}
             {logs.map((log) => (
-              <div key={log.id} className="entry-card">
+              <div
+                key={log.id}
+                className="entry-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => startEdit(log)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    startEdit(log);
+                  }
+                }}
+              >
                 <div>
                   <div className="entry-header">
                     <span className="pill">{log.date}</span>
@@ -191,8 +249,21 @@ export default function Finance() {
                 </div>
                 <div className="entry-actions">
                   <button
+                    className="secondary-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startEdit(log);
+                    }}
+                    disabled={!canDelete(log)}
+                  >
+                    수정
+                  </button>
+                  <button
                     className="danger-button"
-                    onClick={() => removeFinance(log)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeFinance(log);
+                    }}
                     disabled={!canDelete(log)}
                   >
                     삭제
@@ -204,18 +275,21 @@ export default function Finance() {
         </div>
 
         <div className="split-panel">
-          <h3 className="panel-title">지출 추가</h3>
-          <p className="panel-subtitle">카테고리를 선택하고 금액을 입력하세요.</p>
+          <h3 className="panel-title">{editing ? "지출 수정" : "지출 추가"}</h3>
+          <p className="panel-subtitle">
+            {editing ? "필요한 항목을 업데이트해보세요." : "카테고리를 선택하고 금액을 입력하세요."}
+          </p>
           <div className="form-grid">
             <label>
               날짜
               <input
                 className="input"
                 type="date"
-                value={form.date}
+                value={editing ? editing.date : form.date}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, date: event.target.value }))
                 }
+                disabled={!!editing}
               />
             </label>
             <label>
@@ -223,14 +297,16 @@ export default function Finance() {
               <div className="mood-selector">
                 <button
                   type="button"
-                  className={`mood-trigger${showCategoryPicker ? " active" : ""}`}
+                  className={`mood-trigger${selectedCategory ? " filled" : ""}${
+                    showCategoryPicker ? " open" : ""
+                  }`}
                   onClick={() => setShowCategoryPicker((prev) => !prev)}
                 >
                   <div className="mood-trigger-text">
-                    {form.category ? (
+                    {selectedCategory ? (
                       <>
                         <span className="muted">선택됨</span>
-                        <span>{form.category}</span>
+                        <span>{selectedCategory}</span>
                       </>
                     ) : (
                       <>
@@ -247,11 +323,14 @@ export default function Finance() {
                       <button
                         key={option}
                         type="button"
-                        className={`toggle-card${
-                          form.category === option ? " active" : ""
-                        }`}
+                        className={`toggle-card${selectedCategory === option ? " active" : ""}`}
+                        aria-pressed={selectedCategory === option}
                         onClick={() => {
-                          setForm((prev) => ({ ...prev, category: option }));
+                          if (editing) {
+                            setEditForm((prev) => ({ ...prev, category: option }));
+                          } else {
+                            setForm((prev) => ({ ...prev, category: option }));
+                          }
                           setShowCategoryPicker(false);
                         }}
                       >
@@ -266,9 +345,11 @@ export default function Finance() {
               카테고리 직접 입력
               <input
                 className="input"
-                value={form.category}
+                value={editing ? editForm.category : form.category}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, category: event.target.value }))
+                  editing
+                    ? setEditForm((prev) => ({ ...prev, category: event.target.value }))
+                    : setForm((prev) => ({ ...prev, category: event.target.value }))
                 }
                 placeholder="예: 배달, 쇼핑, 카페"
               />
@@ -278,9 +359,11 @@ export default function Finance() {
               <input
                 className="input"
                 type="number"
-                value={form.amount}
+                value={editing ? editForm.amount : form.amount}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, amount: event.target.value }))
+                  editing
+                    ? setEditForm((prev) => ({ ...prev, amount: event.target.value }))
+                    : setForm((prev) => ({ ...prev, amount: event.target.value }))
                 }
               />
             </label>
@@ -288,18 +371,31 @@ export default function Finance() {
               메모
               <input
                 className="input"
-                value={form.memo}
+                value={editing ? editForm.memo : form.memo}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, memo: event.target.value }))
+                  editing
+                    ? setEditForm((prev) => ({ ...prev, memo: event.target.value }))
+                    : setForm((prev) => ({ ...prev, memo: event.target.value }))
                 }
                 placeholder="짧게 남기기"
               />
             </label>
           </div>
           <div className="button-row">
-            <button className="primary-button" onClick={addFinance} disabled={saving}>
-              {saving ? "저장 중..." : "저장"}
-            </button>
+            {editing ? (
+              <>
+                <button className="primary-button" onClick={saveEdit}>
+                  수정 저장
+                </button>
+                <button className="secondary-button" onClick={cancelEdit}>
+                  취소
+                </button>
+              </>
+            ) : (
+              <button className="primary-button" onClick={addFinance} disabled={saving}>
+                {saving ? "저장 중..." : "저장"}
+              </button>
+            )}
           </div>
         </div>
       </section>

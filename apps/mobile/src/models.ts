@@ -13,6 +13,7 @@ export type FinanceLog = {
   uid: string;
   date: string;
   category: string;
+  type: "expense" | "income";
   amount: number;
   memo: string;
 };
@@ -20,7 +21,7 @@ export type FinanceLog = {
 export type AiRecommendation = {
   title: string;
   duration: string;
-  type: "즉시" | "상황형" | "대체" | "회복";
+  type: "Quick" | "Rule" | "Situational" | "Recovery";
   steps: string[];
   reason: string;
 };
@@ -29,6 +30,7 @@ export type AiInsight = {
   summary: string;
   pattern: string;
   recommendations: AiRecommendation[];
+  goal?: string;
   model: string;
   generatedAt: string;
 };
@@ -46,4 +48,33 @@ export type DailyInsightSummary = {
   topCategories: { category: string; amount: number }[];
   ai?: AiInsight;
   aiVersion?: number;
+};
+
+export type StressBucket = "Low" | "Mid" | "High";
+
+export type StressBucketSpend = {
+  bucket: StressBucket;
+  avgDailyExpense: number;
+  dayCount: number;
+};
+
+export type MoodCategorySummary = {
+  mood: string;
+  topCategories: { category: string; amount: number }[];
+  totalExpense: number;
+};
+
+export type StressSpendInsight = {
+  periodDays: number;
+  dailyExpense: number;
+  avgExpense: number;
+  spendSpike: boolean;
+  bucketSummaries: StressBucketSpend[];
+  moodCategoryTop: MoodCategorySummary[];
+  topSpendCategories: { category: string; amount: number }[];
+  highStressDays: number;
+  lowStressDays: number;
+  ratioHighLow: number | null;
+  patternSummary: string;
+  triggerSummary: string;
 };

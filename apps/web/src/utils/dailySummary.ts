@@ -41,9 +41,13 @@ const loadUserLogs = async (db: Firestore, uid: string): Promise<UserLogs> => {
     (docSnap) => docSnap.data() as Omit<StressLog, "id">
   );
 
-  const financeLogs = financeSnap.docs.map(
-    (docSnap) => docSnap.data() as Omit<FinanceLog, "id">
-  );
+  const financeLogs = financeSnap.docs.map((docSnap) => {
+    const raw = docSnap.data() as Omit<FinanceLog, "id">;
+    return {
+      ...raw,
+      type: raw.type ?? "expense",
+    };
+  });
 
   return { stressLogs, financeLogs };
 };
@@ -67,7 +71,9 @@ export const computeDailySummary = (
   financeLogs: FinanceLog[]
 ): DailyInsightSummary => {
   const dayStress = stressLogs.filter((log) => log.date === date);
-  const dayFinance = financeLogs.filter((log) => log.date === date);
+  const dayFinance = financeLogs.filter(
+    (log) => log.date === date && (log.type ?? "expense") === "expense"
+  );
 
   const stressCount = dayStress.length;
   const stressScoreAvg = stressCount
