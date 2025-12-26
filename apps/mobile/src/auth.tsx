@@ -6,10 +6,11 @@ import {
   type User,
 } from "firebase/auth";
 import * as Google from "expo-auth-session/providers/google";
+import { makeRedirectUri } from "expo-auth-session";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { auth, googleClientIds } from "./firebase";
 
-const redirectUri = Google.makeRedirectUri({
+const redirectUri = makeRedirectUri({
   scheme: "insightspend",
   useProxy: true
 });

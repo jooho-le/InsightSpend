@@ -128,12 +128,12 @@ export default function Dashboard() {
   const highSummary = insight?.bucketSummaries.find((item) => item.bucket === "High");
   const lowSummary = insight?.bucketSummaries.find((item) => item.bucket === "Low");
   const midSummary = insight?.bucketSummaries.find((item) => item.bucket === "Mid");
-  const ratioLabel =
-    insight && insight.ratioHighLow
+const ratioLabel =
+    insight && insight.ratioHighLow != null
       ? `${insight.ratioHighLow.toFixed(1)}배`
       : "-";
   const ratioPercent =
-    insight && insight.ratioHighLow
+    insight && insight.ratioHighLow != null
       ? `${Math.round((insight.ratioHighLow - 1) * 100)}%`
       : "-";
   const moodSummaries = insight?.moodCategoryTop.slice(0, 3) ?? [];
@@ -144,6 +144,9 @@ export default function Dashboard() {
       insight.highStressDays > 0 ||
       insight.lowStressDays > 0 ||
       insight.moodCategoryTop.length > 0);
+
+  const formatExpenseCard = (value?: number) =>
+    value != null ? `₩${value.toLocaleString()}` : "-";
 
   return (
     <AppShell>
@@ -161,18 +164,14 @@ export default function Dashboard() {
         <div className="summary-card">
           <div className="muted">High 스트레스 날 평균 지출</div>
           <div className="stat">
-            {highSummary?.avgDailyExpense
-              ? `₩${highSummary.avgDailyExpense.toLocaleString()}`
-              : "-"}
+            {formatExpenseCard(highSummary?.avgDailyExpense)}
           </div>
           <div className="muted">최근 {periodDays}일 기준</div>
         </div>
         <div className="summary-card">
           <div className="muted">Low 스트레스 날 평균 지출</div>
           <div className="stat">
-            {lowSummary?.avgDailyExpense
-              ? `₩${lowSummary.avgDailyExpense.toLocaleString()}`
-              : "-"}
+            {formatExpenseCard(lowSummary?.avgDailyExpense)}
           </div>
           <div className="muted">최근 {periodDays}일 기준</div>
         </div>
@@ -192,17 +191,17 @@ export default function Dashboard() {
           <div className="card-grid">
             <div className="select-card">
               <div className="muted">Low (0-39)</div>
-              <h4>{lowSummary?.avgDailyExpense ? `₩${lowSummary.avgDailyExpense.toLocaleString()}` : "-"}</h4>
+              <h4>{formatExpenseCard(lowSummary?.avgDailyExpense)}</h4>
               <div className="muted">기록 {lowSummary?.dayCount ?? 0}일</div>
             </div>
             <div className="select-card">
               <div className="muted">Mid (40-69)</div>
-              <h4>{midSummary?.avgDailyExpense ? `₩${midSummary.avgDailyExpense.toLocaleString()}` : "-"}</h4>
+              <h4>{formatExpenseCard(midSummary?.avgDailyExpense)}</h4>
               <div className="muted">기록 {midSummary?.dayCount ?? 0}일</div>
             </div>
             <div className="select-card">
               <div className="muted">High (70-100)</div>
-              <h4>{highSummary?.avgDailyExpense ? `₩${highSummary.avgDailyExpense.toLocaleString()}` : "-"}</h4>
+              <h4>{formatExpenseCard(highSummary?.avgDailyExpense)}</h4>
               <div className="muted">기록 {highSummary?.dayCount ?? 0}일</div>
             </div>
           </div>

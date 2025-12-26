@@ -157,9 +157,15 @@ export const buildStressSpendInsight = ({
     High: [] as DateStats[],
   };
   dateStats.forEach((day) => {
-    if (day.stressScores.length === 0) return;
-    const avg = day.stressScores.reduce((sum, score) => sum + score, 0) / day.stressScores.length;
-    bucketDays[getBucket(avg)].push(day);
+    let avg: number | null = null;
+    if (day.stressScores.length > 0) {
+      avg = day.stressScores.reduce((sum, score) => sum + score, 0) / day.stressScores.length;
+    } else if (day.financeLogs.length > 0) {
+      avg = 50;
+    }
+    if (avg !== null) {
+      bucketDays[getBucket(avg)].push(day);
+    }
   });
 
   const lowSummary = summarizeBucket("Low", bucketDays.Low);

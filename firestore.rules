@@ -38,5 +38,15 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }
+    match /insights/{uid}/summary/{periodKey} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
   }
+
+  match /insights/{uid}/daily/{dateKey} {
+    allow read, write: if request.auth != null && request.auth.uid == uid;
+  }
+  match /insights/{uid}/{docPath=**} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
+}
 }
